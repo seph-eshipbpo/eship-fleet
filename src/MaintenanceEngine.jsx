@@ -1,13 +1,5 @@
 import { useState } from "react";
-
-const B = {
-  navy: "#0D1B2A", navyMid: "#112236", navyLight: "#1A3350",
-  navyBorder: "#1E3A5F", blue: "#2356A8", blueLight: "#2E6AC4",
-  white: "#FFFFFF", offWhite: "#C8D8E8", muted: "#7A9BBF",
-  green: "#16a34a", greenLight: "#4ade80", red: "#dc2626",
-  redLight: "#fca5a5", redBorder: "#7f1d1d", yellow: "#ca8a04",
-  yellowLight: "#fde047",
-};
+import { useB } from "./contexts/ThemeContext";
 
 const TODAY = new Date("2026-04-21");
 
@@ -92,9 +84,9 @@ function computeStatus(rule, rec) {
   if (rule.calMonths) calPct = daysService / (rule.calMonths * 30);
   if (rule.calWeeks) calPct = daysService / (rule.calWeeks * 7);
   const maxPct = Math.max(tripPct, kmPct, calPct);
-  if (maxPct >= 1) return { status:"overdue", pct: Math.min(maxPct * 100, 200), bar:B.red };
-  if (maxPct >= 0.8) return { status:"due-soon", pct: maxPct * 100, bar:B.yellowLight };
-  return { status:"ok", pct: maxPct * 100, bar:B.greenLight };
+  if (maxPct >= 1) return { status:"overdue",  pct: Math.min(maxPct * 100, 200), bar:"#dc2626" };
+  if (maxPct >= 0.8) return { status:"due-soon", pct: maxPct * 100,              bar:"#fde047" };
+  return { status:"ok", pct: maxPct * 100, bar:"#4ade80" };
 }
 
 const SERVICE_HISTORY = [
@@ -111,6 +103,7 @@ const SERVICE_HISTORY = [
 ];
 
 function LogModal({ vehicle, rule, rec, onSave, onClose }) {
+  const B = useB();
   const [mechanic, setMechanic] = useState("");
   const [parts, setParts] = useState("");
   const [labor, setLabor] = useState("");
@@ -161,7 +154,7 @@ function LogModal({ vehicle, rule, rec, onSave, onClose }) {
           }}>Cancel</button>
           <button onClick={handleSubmit} style={{
             flex:2, padding:"10px 0", borderRadius:10, border:"none",
-            background:B.blue, color:B.white, fontWeight:700, fontSize:14, cursor:"pointer",
+            background:B.blue, color:"#FFFFFF", fontWeight:700, fontSize:14, cursor:"pointer",
           }}>Submit for Approval</button>
         </div>
       </div>
@@ -170,6 +163,7 @@ function LogModal({ vehicle, rule, rec, onSave, onClose }) {
 }
 
 export default function MaintenanceEngine() {
+  const B = useB();
   const [records, setRecords] = useState(SEED_RECORDS);
   const [pending, setPending] = useState({});
   const [tab, setTab] = useState("schedule");
@@ -276,7 +270,7 @@ export default function MaintenanceEngine() {
                     </div>
                     <span style={{
                       fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20,
-                      background: status==="overdue"?"#3a0e0a":status==="due-soon"?"#1a1500":B.navyLight,
+                      background: status==="overdue"?B.statusRedBg:status==="due-soon"?B.statusYellowBg:B.navyLight,
                       color: bar,
                     }}>{status==="overdue"?"OVERDUE":status==="due-soon"?"DUE SOON":"OK"}</span>
                   </div>
@@ -297,7 +291,7 @@ export default function MaintenanceEngine() {
                   {status !== "ok" && (
                     <button onClick={()=>setLogTarget({vehicle:v,rule,rec})} style={{
                       marginTop:8, padding:"6px 14px", borderRadius:8, border:"none",
-                      background:B.blue, color:B.white, fontSize:11, fontWeight:700, cursor:"pointer",
+                      background:B.blue, color:"#FFFFFF", fontSize:11, fontWeight:700, cursor:"pointer",
                     }}>Log Service</button>
                   )}
                 </div>
@@ -312,8 +306,8 @@ export default function MaintenanceEngine() {
               <div>
                 <div style={{ color:B.yellowLight, fontSize:11, fontWeight:700, marginBottom:8 }}>PENDING APPROVAL ({pendingCount})</div>
                 {Object.values(pending).map(entry=>(
-                  <div key={entry.id} style={{ background:"#1a1500", borderRadius:12, padding:12,
-                    marginBottom:8, border:"1px solid #713f12" }}>
+                  <div key={entry.id} style={{ background:B.statusYellowBg, borderRadius:12, padding:12,
+                    marginBottom:8, border:`1px solid ${B.statusYellowBorder}` }}>
                     <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
                       <span style={{ color:B.yellowLight, fontWeight:700, fontSize:13 }}>{entry.plate}</span>
                       <span style={{ color:B.muted, fontSize:11 }}>{entry.date}</span>
@@ -322,7 +316,7 @@ export default function MaintenanceEngine() {
                     <div style={{ color:B.muted, fontSize:11, marginBottom:8 }}>Mechanic: {entry.mechanic}</div>
                     <button onClick={()=>confirmApprove(entry.id)} style={{
                       padding:"6px 14px", borderRadius:8, border:"none", background:B.green,
-                      color:B.white, fontSize:11, fontWeight:700, cursor:"pointer",
+                      color:"#FFFFFF", fontSize:11, fontWeight:700, cursor:"pointer",
                     }}>✓ Approve & Record</button>
                   </div>
                 ))}

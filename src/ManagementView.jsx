@@ -1,13 +1,6 @@
 import { useState } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-
-const B = {
-  navy: "#0D1B2A", navyMid: "#112236", navyLight: "#1A3350",
-  navyBorder: "#1E3A5F", blue: "#2356A8", blueLight: "#2E6AC4",
-  white: "#FFFFFF", offWhite: "#C8D8E8", muted: "#7A9BBF",
-  green: "#16a34a", greenLight: "#4ade80", red: "#dc2626",
-  redLight: "#fca5a5", yellow: "#ca8a04", yellowLight: "#fde047",
-};
+import { useB } from "./contexts/ThemeContext";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -80,7 +73,7 @@ const ROOT_CAUSES = (() => {
   return Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value}));
 })();
 
-const PIE_COLORS = [B.red, B.yellow, B.blue, B.greenLight, B.muted, "#a78bfa"];
+const PIE_COLORS = ["#dc2626", "#ca8a04", "#2356A8", "#4ade80", "#7A9BBF", "#a78bfa"];
 
 const LOCATIONS = [
   { name:"Valenzuela", vehicles:16, active:14, trips:1520, pct:78 },
@@ -90,6 +83,7 @@ const LOCATIONS = [
 ];
 
 function KpiCard({ label, value, sub, color }) {
+  const B = useB();
   return (
     <div style={{ background:B.navyMid, borderRadius:12, padding:"14px 16px", border:`1px solid ${B.navyBorder}`, flex:1 }}>
       <div style={{ color:color||B.white, fontSize:22, fontWeight:800 }}>{value}</div>
@@ -100,6 +94,7 @@ function KpiCard({ label, value, sub, color }) {
 }
 
 function GoalGauge({ pct, label }) {
+  const B = useB();
   const r = 52, cx = 60, cy = 60;
   const circumference = Math.PI * r;
   const dash = (pct / 100) * circumference;
@@ -122,6 +117,7 @@ function GoalGauge({ pct, label }) {
 const TABS = [["overview","Overview"],["breakdowns","Breakdowns"],["costs","Cost Analysis"],["locations","Locations"]];
 
 export default function ManagementView() {
+  const B = useB();
   const [tab, setTab] = useState("overview");
 
   const totalTrips = TRIP_DATA.reduce((a,d)=>a+d.trips,0);

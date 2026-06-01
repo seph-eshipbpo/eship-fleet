@@ -1,15 +1,7 @@
 import { useState } from "react";
+import { useB } from "./contexts/ThemeContext";
 
-const B = {
-  navy: "#0D1B2A", navyMid: "#112236", navyLight: "#1A3350",
-  navyBorder: "#1E3A5F", blue: "#2356A8", blueLight: "#2E6AC4",
-  white: "#FFFFFF", offWhite: "#C8D8E8", muted: "#7A9BBF",
-  green: "#16a34a", greenLight: "#4ade80", red: "#dc2626",
-  redLight: "#fca5a5", yellow: "#ca8a04", yellowLight: "#fde047",
-  grey: "#4b5563",
-};
-
-const HEALTH_COLOR = { green:B.greenLight, yellow:B.yellowLight, red:B.redLight, grey:"#9ca3af" };
+const HEALTH_COLOR = { green:"#4ade80", yellow:"#fde047", red:"#fca5a5", grey:"#9ca3af" };
 
 const VEHICLES = [
   { id:"v01", plate:"ULD-245", make:"Isuzu", model:"Elf", type:"10W", location:"Valenzuela", condition:"Needs Service", status:"running",
@@ -78,9 +70,9 @@ const POST_ITEMS = [
 ];
 
 const STATUS_STYLE = {
-  running: { bg:"#052e16", border:"#14532d", text:B.greenLight, label:"Running" },
-  maintenance: { bg:"#3a0e0a", border:"#7f1d1d", text:B.redLight, label:"Maintenance" },
-  idle: { bg:"#1c1917", border:"#44403c", text:"#9ca3af", label:"Idle" },
+  running:     { bg:"#052e16", border:"#14532d", text:"#4ade80", label:"Running" },
+  maintenance: { bg:"#3a0e0a", border:"#7f1d1d", text:"#fca5a5", label:"Maintenance" },
+  idle:        { bg:"#1c1917", border:"#44403c", text:"#9ca3af", label:"Idle" },
 };
 
 function StatusBadge({ status }) {
@@ -94,10 +86,11 @@ function StatusBadge({ status }) {
 }
 
 function HealthDot({ health }) {
-  return <span style={{ width:8, height:8, borderRadius:"50%", background:HEALTH_COLOR[health]||B.grey, display:"inline-block" }} />;
+  return <span style={{ width:8, height:8, borderRadius:"50%", background:HEALTH_COLOR[health]||"#9ca3af", display:"inline-block" }} />;
 }
 
 function DetailPanel({ v, onClose }) {
+  const B = useB();
   const [tab, setTab] = useState("status");
   const items = tab === "pre" ? PRE_ITEMS : POST_ITEMS;
   return (
@@ -162,7 +155,7 @@ function DetailPanel({ v, onClose }) {
                 ))}
               </div>
               {v.overdue.length > 0 && (
-                <div style={{ background:"#1a0a0a", border:`1px solid #7f1d1d`, borderRadius:10, padding:10 }}>
+                <div style={{ background:B.statusRedBg, border:`1px solid ${B.statusRedBorder}`, borderRadius:10, padding:10 }}>
                   <div style={{ color:B.redLight, fontSize:11, fontWeight:700, marginBottom:6 }}>OVERDUE ({v.overdue.length})</div>
                   {v.overdue.map(item=>(
                     <div key={item} style={{ color:B.redLight, fontSize:12, marginBottom:3 }}>• {item}</div>
@@ -170,7 +163,7 @@ function DetailPanel({ v, onClose }) {
                 </div>
               )}
               {v.dueSoon.length > 0 && (
-                <div style={{ background:"#1a1500", border:"1px solid #713f12", borderRadius:10, padding:10, marginTop:8 }}>
+                <div style={{ background:B.statusYellowBg, border:`1px solid ${B.statusYellowBorder}`, borderRadius:10, padding:10, marginTop:8 }}>
                   <div style={{ color:B.yellowLight, fontSize:11, fontWeight:700, marginBottom:6 }}>DUE SOON ({v.dueSoon.length})</div>
                   {v.dueSoon.map(item=>(
                     <div key={item} style={{ color:B.yellowLight, fontSize:12, marginBottom:3 }}>• {item}</div>
@@ -200,6 +193,7 @@ function DetailPanel({ v, onClose }) {
 }
 
 export default function FleetDashboard() {
+  const B = useB();
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("all");
 
@@ -223,12 +217,12 @@ export default function FleetDashboard() {
       {/* Summary Cards */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
         {[
-          ["Running", summary.running, B.greenLight, "#052e16"],
-          ["Maintenance", summary.maintenance, B.redLight, "#3a0e0a"],
-          ["Idle", summary.idle, "#9ca3af", "#1c1917"],
-          ["PM Overdue", summary.overdue, B.yellowLight, "#1a1500"],
-        ].map(([label,val,color,bg])=>(
-          <div key={label} style={{ background:bg||B.navyMid, borderRadius:12, padding:"12px 14px", border:`1px solid ${B.navyBorder}` }}>
+          ["Running",     summary.running,     B.greenLight,  B.statusGreenBg,  B.statusGreenBorder],
+          ["Maintenance", summary.maintenance, B.redLight,    B.statusRedBg,    B.statusRedBorder],
+          ["Idle",        summary.idle,        B.muted,       B.statusGrayBg,   B.statusGrayBorder],
+          ["PM Overdue",  summary.overdue,     B.yellowLight, B.statusYellowBg, B.statusYellowBorder],
+        ].map(([label,val,color,bg,border])=>(
+          <div key={label} style={{ background:bg, borderRadius:12, padding:"12px 14px", border:`1px solid ${border}` }}>
             <div style={{ color, fontSize:26, fontWeight:800 }}>{val}</div>
             <div style={{ color:B.muted, fontSize:11, marginTop:2 }}>{label}</div>
           </div>
@@ -240,7 +234,7 @@ export default function FleetDashboard() {
         {[["all","All"],["running","Running"],["maintenance","Maintenance"],["idle","Idle"],["attention","Needs Attention"]].map(([k,label])=>(
           <button key={k} onClick={()=>setFilter(k)} style={{
             padding:"5px 12px", borderRadius:20, border:`1px solid ${filter===k?B.blue:B.navyBorder}`,
-            background: filter===k ? B.blue : B.navyLight, color: filter===k ? B.white : B.muted,
+            background: filter===k ? B.blue : B.navyLight, color: filter===k ? "#FFFFFF" : B.muted,
             fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap",
           }}>{label}</button>
         ))}

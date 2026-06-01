@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 import LoginPage from "./pages/LoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
+import ThemeToggle from "./components/ThemeToggle";
 import InspectionApp from "./InspectionApp";
 import FleetDashboard from "./FleetDashboard";
 import FleetRegistry from "./FleetRegistry";
@@ -34,12 +36,12 @@ function getResetParams() {
 }
 
 function clearResetParams() {
-  const url = window.location.pathname;
-  window.history.replaceState({}, "", url);
+  window.history.replaceState({}, "", window.location.pathname);
 }
 
 function AuthGate() {
   const { isAuthenticated, signOut } = useAuth();
+  const { colors } = useTheme();
   const [screen,       setScreen]       = useState(() => getResetParams() ? "reset" : "login");
   const [activeModule, setActiveModule] = useState("dashboard");
   const resetParams = getResetParams();
@@ -68,9 +70,7 @@ function AuthGate() {
         />
       );
     }
-    return (
-      <LoginPage onForgotPassword={() => setScreen("forgot")} />
-    );
+    return <LoginPage onForgotPassword={() => setScreen("forgot")} />;
   }
 
   const Component = mod?.component;
@@ -78,29 +78,30 @@ function AuthGate() {
   return (
     <div style={{
       height: "100%",
-      background: "#0D1B2A",
+      background: colors.bg,
       display: "flex",
       flexDirection: "column",
       overflow: "hidden",
       width: "100%",
     }}>
       {/* Header */}
-      <div style={{ background: "#112236", borderBottom: "1px solid #1E3A5F", flexShrink: 0 }}>
+      <div style={{ background: colors.surface, borderBottom: `1px solid ${colors.border}`, flexShrink: 0 }}>
         <div style={{ ...INNER, display:"flex", alignItems:"center", gap:10, padding:"10px 16px 8px" }}>
-          <div style={{ color:"#2356A8", fontSize:18, fontWeight:900, letterSpacing:-0.5 }}>eShip</div>
-          <div style={{ color:"#7A9BBF", fontSize:11, marginTop:1 }}>Fleet Management</div>
+          <div style={{ color: colors.primary, fontSize:18, fontWeight:900, letterSpacing:-0.5 }}>eShip</div>
+          <div style={{ color: colors.muted, fontSize:11, marginTop:1 }}>Fleet Management</div>
           <div style={{ flex:1 }} />
           <div style={{
             fontSize:10, fontWeight:700, color:"#4ade80",
             background:"#052e16", border:"1px solid #14532d",
             padding:"2px 8px", borderRadius:20,
           }}>LIVE</div>
+          <ThemeToggle />
           <button
             onClick={signOut}
             style={{
               background:"none",
-              border:"1px solid #1E3A5F",
-              color:"#7A9BBF",
+              border:`1px solid ${colors.border}`,
+              color: colors.muted,
               fontSize:10,
               fontWeight:700,
               padding:"3px 10px",
@@ -123,8 +124,8 @@ function AuthGate() {
 
       {/* Bottom tab bar */}
       <div style={{
-        background:"#112236",
-        borderTop:"1px solid #1E3A5F",
+        background: colors.surface,
+        borderTop: `1px solid ${colors.border}`,
         flexShrink:0,
         paddingBottom:"env(safe-area-inset-bottom, 0px)",
       }}>
@@ -143,12 +144,12 @@ function AuthGate() {
                 background:"transparent",
                 cursor:"pointer",
                 gap:3,
-                borderTop:`2px solid ${active ? "#2356A8" : "transparent"}`,
+                borderTop:`2px solid ${active ? colors.tabBorder : "transparent"}`,
               }}>
-                <span style={{ fontSize:18, lineHeight:1, color:active?"#FFFFFF":"#4A6A8A" }}>{m.icon}</span>
+                <span style={{ fontSize:18, lineHeight:1, color: active ? colors.tabActive : colors.tabInactive }}>{m.icon}</span>
                 <span style={{
                   fontSize:9, fontWeight:700, letterSpacing:0.3,
-                  color:active?"#FFFFFF":"#4A6A8A",
+                  color: active ? colors.tabActive : colors.tabInactive,
                 }}>{m.label.toUpperCase()}</span>
               </button>
             );
@@ -161,8 +162,10 @@ function AuthGate() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AuthGate />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AuthGate />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

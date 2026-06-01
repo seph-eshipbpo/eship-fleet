@@ -1,13 +1,5 @@
 import { useState } from "react";
-
-const B = {
-  navy: "#0D1B2A", navyMid: "#112236", navyLight: "#1A3350",
-  navyBorder: "#1E3A5F", blue: "#2356A8", blueLight: "#2E6AC4",
-  white: "#FFFFFF", offWhite: "#C8D8E8", muted: "#7A9BBF",
-  green: "#16a34a", greenLight: "#4ade80", red: "#dc2626",
-  redLight: "#fca5a5", redBorder: "#7f1d1d", yellow: "#ca8a04",
-  yellowLight: "#fde047",
-};
+import { useB } from "./contexts/ThemeContext";
 
 const VEHICLES = [
   { id:"v01", plate:"ULD-245", make:"Isuzu", model:"Elf", type:"10W" },
@@ -124,6 +116,7 @@ const POST_SECTIONS = [
 ];
 
 function CheckItem({ item, value, onChange, flagNote, onNoteChange }) {
+  const B = useB();
   const passed = value === "ok";
   const flagged = value === "flag";
   return (
@@ -132,11 +125,11 @@ function CheckItem({ item, value, onChange, flagNote, onNoteChange }) {
         <span style={{ flex:1, fontSize:13, color: flagged ? B.redLight : B.offWhite }}>{item.label}</span>
         <button onClick={() => onChange("ok")} style={{
           padding:"4px 12px", borderRadius:8, border:"none", cursor:"pointer", fontSize:18,
-          background: passed ? B.green : B.navyLight, color: passed ? B.white : B.muted,
+          background: passed ? B.green : B.navyLight, color: passed ? "#FFFFFF" : B.muted,
         }}>✓</button>
         <button onClick={() => onChange("flag")} style={{
           padding:"4px 12px", borderRadius:8, border:"none", cursor:"pointer", fontSize:18,
-          background: flagged ? B.red : B.navyLight, color: flagged ? B.white : B.muted,
+          background: flagged ? B.red : B.navyLight, color: flagged ? "#FFFFFF" : B.muted,
         }}>⚑</button>
       </div>
       {flagged && (
@@ -146,7 +139,7 @@ function CheckItem({ item, value, onChange, flagNote, onNoteChange }) {
           placeholder="Describe the issue…"
           style={{
             width:"100%", borderRadius:8, padding:"7px 10px", fontSize:12, marginTop:6,
-            border:`1px solid ${B.redBorder}`, background:"#3a0e0a", color:B.redLight, outline:"none",
+            border:`1px solid ${B.statusRedBorder}`, background:B.statusRedBg, color:B.redLight, outline:"none",
             boxSizing:"border-box",
           }}
         />
@@ -156,6 +149,7 @@ function CheckItem({ item, value, onChange, flagNote, onNoteChange }) {
 }
 
 export default function InspectionApp() {
+  const B = useB();
   const [screen, setScreen] = useState("home");
   const [type, setType] = useState("pre");
   const [vehicle, setVehicle] = useState(null);
@@ -197,7 +191,7 @@ export default function InspectionApp() {
           {[["pre","Pre-Trip"],["post","Post-Trip"]].map(([k,label])=>(
             <button key={k} onClick={()=>setType(k)} style={{
               flex:1, padding:"14px 0", borderRadius:12, border:`2px solid ${type===k?B.blue:B.navyBorder}`,
-              background: type===k ? B.blue : B.navyLight, color:B.white, fontWeight:700, fontSize:14, cursor:"pointer",
+              background: type===k ? B.blue : B.navyLight, color: type===k ? "#FFFFFF" : B.muted, fontWeight:700, fontSize:14, cursor:"pointer",
             }}>{label}</button>
           ))}
         </div>
@@ -304,7 +298,7 @@ export default function InspectionApp() {
         <div style={{ padding:16, borderTop:`1px solid ${B.navyBorder}`, background:B.navyMid }}>
           <button onClick={()=>setScreen("summary")} style={{
             width:"100%", padding:"14px 0", borderRadius:12, border:"none", cursor:"pointer",
-            background: flags>0 ? B.red : B.blue, color:B.white, fontWeight:700, fontSize:15,
+            background: flags>0 ? B.red : B.blue, color:"#FFFFFF", fontWeight:700, fontSize:15,
           }}>
             {flags>0 ? `⚠ Submit with ${flags} Issue${flags>1?"s":""}` : "✓ Submit Inspection"}
           </button>
@@ -362,7 +356,7 @@ export default function InspectionApp() {
 
           {/* Flagged Items */}
           {flags > 0 && (
-            <div style={{ background:"#1a0a0a", borderRadius:14, padding:14, marginBottom:16, border:`1px solid ${B.redBorder}` }}>
+            <div style={{ background:B.statusRedBg, borderRadius:14, padding:14, marginBottom:16, border:`1px solid ${B.statusRedBorder}` }}>
               <div style={{ color:B.redLight, fontSize:12, fontWeight:700, letterSpacing:1, marginBottom:10 }}>⚠ FLAGGED ISSUES ({flags})</div>
               {flaggedItems.map(item=>(
                 <div key={item.id} style={{ marginBottom:10, paddingBottom:10, borderBottom:`1px solid ${B.redBorder}` }}>
@@ -375,7 +369,7 @@ export default function InspectionApp() {
           )}
 
           {flags === 0 && (
-            <div style={{ background:"#0a1a0f", borderRadius:14, padding:14, marginBottom:16, border:"1px solid #14532d", textAlign:"center" }}>
+            <div style={{ background:B.statusGreenBg, borderRadius:14, padding:14, marginBottom:16, border:`1px solid ${B.statusGreenBorder}`, textAlign:"center" }}>
               <div style={{ fontSize:28, marginBottom:4 }}>✓</div>
               <div style={{ color:B.greenLight, fontWeight:700, fontSize:14 }}>All items passed</div>
               <div style={{ color:B.muted, fontSize:12, marginTop:2 }}>Vehicle cleared for {type==="pre"?"departure":"parking"}</div>

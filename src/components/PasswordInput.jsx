@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTheme } from "../contexts/ThemeContext";
 
 const EyeOpen = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -15,7 +16,8 @@ const EyeOff = () => (
   </svg>
 );
 
-export default function PasswordInput({ value, onChange, placeholder = "••••••••", autoComplete, required, border, bg }) {
+export default function PasswordInput({ value, onChange, placeholder = "••••••••", autoComplete, required }) {
+  const { colors } = useTheme();
   const [show, setShow] = useState(false);
 
   return (
@@ -30,10 +32,10 @@ export default function PasswordInput({ value, onChange, placeholder = "••�
         style={{
           width: "100%",
           boxSizing: "border-box",
-          background: bg || "#0D1B2A",
-          border: `1px solid ${border || "#1E3A5F"}`,
+          background: colors.input,
+          border: `1px solid ${colors.inputBorder}`,
           borderRadius: 8,
-          color: "#FFFFFF",
+          color: colors.text,
           fontSize: 14,
           padding: "10px 40px 10px 12px",
           outline: "none",
@@ -50,7 +52,7 @@ export default function PasswordInput({ value, onChange, placeholder = "••�
           background: "none",
           border: "none",
           cursor: "pointer",
-          color: "#7A9BBF",
+          color: colors.muted,
           padding: 0,
           display: "flex",
           alignItems: "center",

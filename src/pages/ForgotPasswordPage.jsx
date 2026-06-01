@@ -1,45 +1,12 @@
 import { useState, useEffect } from "react";
 import { forgotPassword } from "../api/auth";
-
-const B = {
-  bg:        "#0D1B2A",
-  surface:   "#112236",
-  border:    "#1E3A5F",
-  primary:   "#2356A8",
-  primaryHv: "#1a4080",
-  text:      "#FFFFFF",
-  muted:     "#7A9BBF",
-  error:     "#ef4444",
-  errorBg:   "#1f0a0a",
-  success:   "#4ade80",
-  successBg: "#052e16",
-  input:     "#0D1B2A",
-};
-
-const field = {
-  width: "100%",
-  boxSizing: "border-box",
-  background: B.input,
-  border: `1px solid ${B.border}`,
-  borderRadius: 8,
-  color: B.text,
-  fontSize: 14,
-  padding: "10px 12px",
-  outline: "none",
-};
-
-const label = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 700,
-  color: B.muted,
-  marginBottom: 6,
-  letterSpacing: 0.4,
-};
+import { useTheme } from "../contexts/ThemeContext";
+import ThemeToggle from "../components/ThemeToggle";
 
 export default function ForgotPasswordPage({ onBack }) {
   useEffect(() => { document.title = "eShip Fleet – Forgot Password"; }, []);
 
+  const { colors } = useTheme();
   const [email,   setEmail]   = useState("");
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
@@ -62,41 +29,49 @@ export default function ForgotPasswordPage({ onBack }) {
   return (
     <div style={{
       minHeight: "100dvh",
-      background: B.bg,
+      background: colors.bg,
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
       padding: "24px 16px",
       boxSizing: "border-box",
+      position: "relative",
     }}>
+
+      {/* Theme toggle — top right */}
+      <div style={{ position: "absolute", top: 16, right: 16 }}>
+        <ThemeToggle />
+      </div>
+
       <div style={{ width: "100%", maxWidth: 400 }}>
 
         {/* Logo */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ color: B.primary, fontSize: 28, fontWeight: 900, letterSpacing: -1 }}>eShip</div>
-          <div style={{ color: B.muted, fontSize: 12, marginTop: 4 }}>Fleet Management</div>
+          <div style={{ color: colors.primary, fontSize: 28, fontWeight: 900, letterSpacing: -1 }}>eShip</div>
+          <div style={{ color: colors.muted, fontSize: 12, marginTop: 4 }}>Fleet Management</div>
         </div>
 
         {/* Card */}
         <div style={{
-          background: B.surface,
-          border: `1px solid ${B.border}`,
+          background: colors.surface,
+          border: `1px solid ${colors.border}`,
           borderRadius: 12,
           padding: "28px 24px",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
         }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: B.text, marginBottom: 4 }}>Forgot password</div>
-          <div style={{ fontSize: 13, color: B.muted, marginBottom: 24 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: colors.text, marginBottom: 4 }}>Forgot password</div>
+          <div style={{ fontSize: 13, color: colors.muted, marginBottom: 24 }}>
             Enter your email and we'll send you a reset link.
           </div>
 
           {error && (
             <div style={{
-              background: B.errorBg,
-              border: `1px solid ${B.error}`,
+              background: colors.errorBg,
+              border: `1px solid ${colors.errorBorder}`,
               borderRadius: 8,
               padding: "10px 12px",
-              color: B.error,
+              color: colors.error,
               fontSize: 13,
               marginBottom: 20,
             }}>
@@ -106,11 +81,11 @@ export default function ForgotPasswordPage({ onBack }) {
 
           {sent ? (
             <div style={{
-              background: B.successBg,
-              border: `1px solid #14532d`,
+              background: colors.successBg,
+              border: `1px solid ${colors.successBorder}`,
               borderRadius: 8,
               padding: "14px 12px",
-              color: B.success,
+              color: colors.success,
               fontSize: 13,
               marginBottom: 24,
               lineHeight: 1.5,
@@ -121,7 +96,9 @@ export default function ForgotPasswordPage({ onBack }) {
           ) : (
             <form onSubmit={handleSubmit}>
               <div style={{ marginBottom: 24 }}>
-                <label style={label}>EMAIL</label>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: colors.muted, marginBottom: 6, letterSpacing: 0.4 }}>
+                  EMAIL
+                </label>
                 <input
                   type="email"
                   value={email}
@@ -129,7 +106,17 @@ export default function ForgotPasswordPage({ onBack }) {
                   placeholder="you@example.com"
                   required
                   autoComplete="email"
-                  style={field}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: colors.input,
+                    border: `1px solid ${colors.inputBorder}`,
+                    borderRadius: 8,
+                    color: colors.text,
+                    fontSize: 14,
+                    padding: "10px 12px",
+                    outline: "none",
+                  }}
                 />
               </div>
 
@@ -139,8 +126,8 @@ export default function ForgotPasswordPage({ onBack }) {
                 style={{
                   width: "100%",
                   padding: "11px 0",
-                  background: loading ? B.primaryHv : B.primary,
-                  color: B.text,
+                  background: loading ? colors.primaryHv : colors.primary,
+                  color: "#FFFFFF",
                   border: "none",
                   borderRadius: 8,
                   fontSize: 14,
@@ -161,7 +148,7 @@ export default function ForgotPasswordPage({ onBack }) {
               style={{
                 background: "none",
                 border: "none",
-                color: B.muted,
+                color: colors.muted,
                 fontSize: 13,
                 cursor: "pointer",
                 textDecoration: "underline",

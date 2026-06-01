@@ -1,13 +1,5 @@
 import { useState } from "react";
-
-const B = {
-  navy: "#0D1B2A", navyMid: "#112236", navyLight: "#1A3350",
-  navyBorder: "#1E3A5F", blue: "#2356A8", blueLight: "#2E6AC4",
-  white: "#FFFFFF", offWhite: "#C8D8E8", muted: "#7A9BBF",
-  green: "#16a34a", greenLight: "#4ade80", red: "#dc2626",
-  redLight: "#fca5a5", redBorder: "#7f1d1d", yellow: "#ca8a04",
-  yellowLight: "#fde047",
-};
+import { useB } from "./contexts/ThemeContext";
 
 const PM_RULES = [
   { id:"engine_oil",     label:"Engine Oil Change",     calMonths:2,   tripLimit:30,  kmLimit:1200,  types:["10W","6W","4W"] },
@@ -131,6 +123,7 @@ function computePmAlerts(pmState) {
 }
 
 export default function TripPlannerIntegration() {
+  const B = useB();
   const [pmState, setPmState] = useState(buildPmState);
   const [tripLog, setTripLog] = useState(buildSeedTrips);
   const [showModal, setShowModal] = useState(false);
@@ -213,7 +206,7 @@ export default function TripPlannerIntegration() {
         )}
 
         {overdueAlerts.length > 0 && (
-          <div style={{ background:"#3a0e0a", border:`1px solid ${B.redBorder}`, borderRadius:10,
+          <div style={{ background:B.statusRedBg, border:`1px solid ${B.statusRedBorder}`, borderRadius:10,
             padding:"8px 12px", marginBottom:10 }}>
             <div style={{ color:B.redLight, fontSize:11, fontWeight:700, marginBottom:4 }}>
               ⚠ {overdueAlerts.length} PM OVERDUE
@@ -284,7 +277,7 @@ export default function TripPlannerIntegration() {
               <button onClick={submitForm} disabled={!formPlate||!formRoute} style={{
                 width:"100%", padding:"12px 0", borderRadius:10, border:"none",
                 background: formPlate&&formRoute ? B.blue : B.navyLight,
-                color: formPlate&&formRoute ? B.white : B.muted,
+                color: formPlate&&formRoute ? "#FFFFFF" : B.muted,
                 fontWeight:700, fontSize:14, cursor: formPlate&&formRoute?"pointer":"default",
               }}>Log Trip & Sync to PM</button>
             </div>
@@ -329,9 +322,9 @@ export default function TripPlannerIntegration() {
             )}
             {pmAlerts.map((a,i)=>(
               <div key={i} style={{
-                background: a.overdue ? "#1a0a0a" : "#1a1500",
+                background: a.overdue ? B.statusRedBg : B.statusYellowBg,
                 borderRadius:10, padding:12, marginBottom:8,
-                border:`1px solid ${a.overdue?B.redBorder:"#713f12"}`,
+                border:`1px solid ${a.overdue ? B.statusRedBorder : B.statusYellowBorder}`,
               }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
                   <span style={{ color:a.overdue?B.redLight:B.yellowLight, fontWeight:700, fontSize:13 }}>{a.plate}</span>

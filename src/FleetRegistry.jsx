@@ -1,20 +1,12 @@
 import { useState, useMemo } from "react";
-
-const B = {
-  navy: "#0D1B2A", navyMid: "#112236", navyLight: "#1A3350",
-  navyBorder: "#1E3A5F", blue: "#2356A8", blueLight: "#2E6AC4",
-  white: "#FFFFFF", offWhite: "#C8D8E8", muted: "#7A9BBF",
-  green: "#16a34a", greenLight: "#4ade80", red: "#dc2626",
-  redLight: "#fca5a5", redBorder: "#7f1d1d", yellow: "#ca8a04",
-  yellowLight: "#fde047",
-};
+import { useB } from "./contexts/ThemeContext";
 
 const TERMS_OPTS = ["Cash","12 Months","24 Months","36 Months","60 Months","Rental"];
 
 const STATUS_STYLE = {
-  active:  { bg:"#052e16", border:"#14532d", text:B.greenLight },
+  active:  { bg:"#052e16", border:"#14532d", text:"#4ade80" },
   retired: { bg:"#1c1917", border:"#44403c", text:"#9ca3af" },
-  junk:    { bg:"#3a0e0a", border:"#7f1d1d", text:B.redLight },
+  junk:    { bg:"#3a0e0a", border:"#7f1d1d", text:"#fca5a5" },
   sold:    { bg:"#1e1b4b", border:"#3730a3", text:"#a5b4fc" },
   rental:  { bg:"#0c1a2e", border:"#1d4ed8", text:"#93c5fd" },
 };
@@ -198,6 +190,7 @@ function StatusBadge({ status }) {
 }
 
 function Toast({ msg, type }) {
+  const B = useB();
   return (
     <div style={{
       position:"fixed", bottom:24, left:"50%", transform:"translateX(-50%)",
@@ -210,6 +203,7 @@ function Toast({ msg, type }) {
 }
 
 export default function FleetRegistry() {
+  const B = useB();
   const [vehicles, setVehicles] = useState(SEED_VEHICLES);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -306,7 +300,7 @@ export default function FleetRegistry() {
         {[["all","All"],["active","Active"],["retired","Retired"],["junk","Junk"],["sold","Sold"]].map(([k,l])=>(
           <button key={k} onClick={()=>setFilterStatus(k)} style={{
             padding:"4px 12px", borderRadius:20, border:`1px solid ${filterStatus===k?B.blue:B.navyBorder}`,
-            background:filterStatus===k?B.blue:B.navyLight, color:filterStatus===k?B.white:B.muted,
+            background:filterStatus===k?B.blue:B.navyLight, color:filterStatus===k?"#FFFFFF":B.muted,
             fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap",
           }}>{l}</button>
         ))}
@@ -406,7 +400,7 @@ export default function FleetRegistry() {
               }}>Cancel</button>
               <button onClick={handleSave} style={{
                 flex:2, padding:"11px 0", borderRadius:10, border:"none",
-                background:B.blue, color:B.white, fontWeight:700, fontSize:14, cursor:"pointer",
+                background:B.blue, color:"#FFFFFF", fontWeight:700, fontSize:14, cursor:"pointer",
               }}>Save Vehicle</button>
             </div>
           </div>
