@@ -1,4 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import LoginPage from "./pages/LoginPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import InspectionApp from "./InspectionApp";
 import FleetDashboard from "./FleetDashboard";
 import FleetRegistry from "./FleetRegistry";
@@ -22,9 +26,53 @@ const INNER = {
   boxSizing: "border-box",
 };
 
-export default function App() {
+function getResetParams() {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get("token");
+  const email  = params.get("email");
+  return token ? { token, email } : null;
+}
+
+function clearResetParams() {
+  const url = window.location.pathname;
+  window.history.replaceState({}, "", url);
+}
+
+function AuthGate() {
+  const { isAuthenticated, signOut } = useAuth();
+  const [screen,       setScreen]       = useState(() => getResetParams() ? "reset" : "login");
   const [activeModule, setActiveModule] = useState("dashboard");
+  const resetParams = getResetParams();
+
   const mod = MODULES.find(m => m.id === activeModule);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      document.title = `eShip Fleet – ${mod?.label ?? "Dashboard"}`;
+    }
+  }, [activeModule, isAuthenticated]);
+
+  if (!isAuthenticated) {
+    if (screen === "forgot") {
+      return <ForgotPasswordPage onBack={() => setScreen("login")} />;
+    }
+    if (screen === "reset" && resetParams) {
+      return (
+        <ResetPasswordPage
+          token={resetParams.token}
+          email={resetParams.email}
+          onSuccess={() => {
+            clearResetParams();
+            setScreen("login");
+          }}
+        />
+      );
+    }
+    return (
+      <LoginPage onForgotPassword={() => setScreen("forgot")} />
+    );
+  }
+
   const Component = mod?.component;
 
   return (
@@ -47,6 +95,22 @@ export default function App() {
             background:"#052e16", border:"1px solid #14532d",
             padding:"2px 8px", borderRadius:20,
           }}>LIVE</div>
+          <button
+            onClick={signOut}
+            style={{
+              background:"none",
+              border:"1px solid #1E3A5F",
+              color:"#7A9BBF",
+              fontSize:10,
+              fontWeight:700,
+              padding:"3px 10px",
+              borderRadius:20,
+              cursor:"pointer",
+              letterSpacing:0.3,
+            }}
+          >
+            SIGN OUT
+          </button>
         </div>
       </div>
 
@@ -92,5 +156,13 @@ export default function App() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }
