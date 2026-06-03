@@ -21,7 +21,7 @@ function CheckItem({ item, value, onChange, flagNote, onNoteChange }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ flex: 1, fontSize: 13, color: flagged ? B.redLight : B.offWhite }}>
+        <span style={{ flex: 1, fontSize: 13, color: flagged ? "#b91c1c" : B.offWhite }}>
           {item.label}
         </span>
         <button onClick={() => onChange("pass")} style={{
@@ -41,7 +41,7 @@ function CheckItem({ item, value, onChange, flagNote, onNoteChange }) {
           style={{
             width: "100%", borderRadius: 8, padding: "7px 10px", fontSize: 12, marginTop: 6,
             border: `1px solid ${B.statusRedBorder}`, background: B.statusRedBg,
-            color: B.redLight, outline: "none", boxSizing: "border-box",
+            color: "#991b1b", outline: "none", boxSizing: "border-box",
           }}
         />
       )}

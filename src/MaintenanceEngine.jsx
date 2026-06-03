@@ -1,298 +1,355 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useB } from "./contexts/ThemeContext";
+import { fetchPmSchedule, fetchServiceLogs, logService, approveServiceLog } from "./api/maintenance";
 
-const TODAY = new Date("2026-04-21");
+// ── Log Service modal ────────────────────────────────────────────────────────
+const EMPTY_PART = () => ({ name: "", qty: 1, unit_cost: 0 });
 
-function dAgo(n) {
-  const d = new Date(TODAY);
-  d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-function mkRec(lastDate, tripsSince, kmSince, needsBaseline = false) {
-  return { lastServiceDate: lastDate, tripsSince, kmSince, needsBaseline };
-}
-
-const PM_RULES = [
-  { id:"engine_oil",     label:"Engine Oil Change",      calMonths:2,   tripLimit:30,  kmLimit:1200,  types:["10W","6W","4W"] },
-  { id:"fuel_filter",    label:"Fuel Filter Replacement", calMonths:3,   tripLimit:45,  kmLimit:1800,  types:["10W","6W","4W"] },
-  { id:"air_filter_rep", label:"Air Filter Replacement",  calMonths:6,   tripLimit:90,  kmLimit:3600,  types:["10W","6W","4W"] },
-  { id:"air_filter_cln", label:"Air Filter Cleaning",     calMonths:2,   tripLimit:30,  kmLimit:1200,  types:["10W","6W","4W"] },
-  { id:"brake_check",    label:"Brake Inspection",        calWeeks:2,    tripLimit:10,  kmLimit:400,   types:["10W","6W","4W"] },
-  { id:"radiator",       label:"Radiator Flush",          calMonths:12,  tripLimit:150, kmLimit:6000,  types:["10W","6W"] },
-  { id:"tire_rotation",  label:"Tire Rotation",           calMonths:null,tripLimit:15,  kmLimit:600,   types:["10W","6W","4W"] },
-  { id:"drive_belts",    label:"Drive Belt Inspection",   calMonths:null,tripLimit:15,  kmLimit:600,   types:["10W","6W"] },
-  { id:"truck_wash",     label:"Truck Wash",              calMonths:null,tripLimit:15,  kmLimit:null,  types:["10W","6W","4W"] },
-  { id:"torque_rod",     label:"Torque Rod Check",        calMonths:24,  tripLimit:300, kmLimit:12000, types:["10W","6W"] },
-];
-
-const VEHICLES = [
-  { id:"v01", plate:"ULD-245", make:"Isuzu", model:"Elf", type:"10W", year:2018, loc:"Valenzuela",
-    kmPerTrip:40, trips:28, totalKm:3200, driver:"Rolando Reyes", leadman:"Felix Santos" },
-  { id:"v02", plate:"CSY-229", make:"Isuzu", model:"Elf", type:"10W", year:2019, loc:"Valenzuela",
-    kmPerTrip:40, trips:12, totalKm:1420, driver:"Eduardo Bautista", leadman:"Antonio Cruz" },
-  { id:"v03", plate:"U5V-991", make:"Isuzu", model:"Elf", type:"10W", year:2020, loc:"Cebu",
-    kmPerTrip:40, trips:8, totalKm:920, driver:"Benjamin Flores", leadman:"Manuel Ramos" },
-  { id:"v04", plate:"NES-2545", make:"Mitsubishi", model:"Canter", type:"6W", year:2017, loc:"Tacloban",
-    kmPerTrip:35, trips:14, totalKm:1540, driver:"Rodrigo Villanueva", leadman:"Danilo Aquino" },
-  { id:"v05", plate:"U5U-532", make:"Isuzu", model:"NHR", type:"4W", year:2021, loc:"Valenzuela",
-    kmPerTrip:25, trips:6, totalKm:580, driver:"Joseph Dela Cruz", leadman:"Rafael Torres" },
-  { id:"v06", plate:"NFL-9124", make:"Isuzu", model:"Elf", type:"10W", year:2020, loc:"Cebu",
-    kmPerTrip:40, trips:5, totalKm:560, driver:"Vicente Garcia", leadman:"Arturo Mendoza" },
-  { id:"v07", plate:"WMJ-284", make:"Isuzu", model:"Elf", type:"10W", year:2018, loc:"Valenzuela",
-    kmPerTrip:40, trips:31, totalKm:3560, driver:"Roberto Santos", leadman:"Carlos Reyes" },
-  { id:"v08", plate:"NAN-597", make:"Mitsubishi", model:"Canter", type:"6W", year:2019, loc:"Valenzuela",
-    kmPerTrip:35, trips:11, totalKm:1240, driver:"Miguel Castro", leadman:"Ramon Diaz" },
-  { id:"v09", plate:"KOH-464", make:"Isuzu", model:"Elf", type:"10W", year:2021, loc:"Valenzuela",
-    kmPerTrip:40, trips:7, totalKm:820, driver:"Ernesto Lopez", leadman:"Alfredo Navarro" },
-  { id:"v10", plate:"XAS-271", make:"Isuzu", model:"NHR", type:"4W", year:2020, loc:"Valenzuela",
-    kmPerTrip:25, trips:10, totalKm:920, driver:"Francisco Morales", leadman:"Marcelo Perez" },
-  { id:"v11", plate:"XKY-980", make:"Isuzu", model:"NHR", type:"4W", year:2019, loc:"Valenzuela",
-    kmPerTrip:25, trips:0, totalKm:0, driver:"Domingo Gonzales", leadman:"Rodrigo Lim" },
-  { id:"v12", plate:"U5V-261", make:"Isuzu", model:"Elf", type:"10W", year:2022, loc:"Cebu",
-    kmPerTrip:40, trips:4, totalKm:460, driver:"Antonio Ramos", leadman:"Pedro Chan" },
-  { id:"v13", plate:"U5U-584", make:"Isuzu", model:"NHR", type:"4W", year:2022, loc:"Valenzuela",
-    kmPerTrip:25, trips:3, totalKm:280, driver:"Jose De Leon", leadman:"Michael Tan" },
-  { id:"v14", plate:"U5U-588", make:"Isuzu", model:"NHR", type:"4W", year:2022, loc:"Valenzuela",
-    kmPerTrip:25, trips:2, totalKm:180, driver:"Ricardo Mateo", leadman:"Christian Ong" },
-  { id:"v15", plate:"NDP-5708", make:"Mitsubishi", model:"Canter", type:"6W", year:2021, loc:"Valenzuela",
-    kmPerTrip:35, trips:2, totalKm:220, driver:"Armando Delos Santos", leadman:"Allan Garcia" },
-  { id:"v16", plate:"WJC-230", make:"Isuzu", model:"NHR", type:"4W", year:2020, loc:"Valenzuela",
-    kmPerTrip:25, trips:9, totalKm:840, driver:"Renato Aguilar", leadman:"Efren Fernandez" },
-];
-
-const SEED_RECORDS = (() => {
-  const r = {};
-  VEHICLES.forEach(v => {
-    r[v.plate] = {};
-    PM_RULES.filter(rule => rule.types.includes(v.type)).forEach(rule => {
-      r[v.plate][rule.id] = mkRec(dAgo(45), Math.floor(v.trips * 0.6), Math.floor(v.trips * 0.6 * v.kmPerTrip));
-    });
-  });
-  r["ULD-245"]["engine_oil"] = mkRec(dAgo(55), 28, 1120);
-  r["WMJ-284"]["engine_oil"] = mkRec(dAgo(190), 31, 1085);
-  r["NES-2545"]["engine_oil"] = mkRec(dAgo(58), 14, 350);
-  r["CSY-229"]["engine_oil"] = mkRec(dAgo(54), 12, 480);
-  return r;
-})();
-
-function computeStatus(rule, rec) {
-  const daysService = Math.floor((TODAY - new Date(rec.lastServiceDate)) / 86400000);
-  const tripPct = rule.tripLimit ? rec.tripsSince / rule.tripLimit : 0;
-  const kmPct = rule.kmLimit ? rec.kmSince / rule.kmLimit : 0;
-  let calPct = 0;
-  if (rule.calMonths) calPct = daysService / (rule.calMonths * 30);
-  if (rule.calWeeks) calPct = daysService / (rule.calWeeks * 7);
-  const maxPct = Math.max(tripPct, kmPct, calPct);
-  if (maxPct >= 1) return { status:"overdue",  pct: Math.min(maxPct * 100, 200), bar:"#dc2626" };
-  if (maxPct >= 0.8) return { status:"due-soon", pct: maxPct * 100,              bar:"#fde047" };
-  return { status:"ok", pct: maxPct * 100, bar:"#4ade80" };
-}
-
-const SERVICE_HISTORY = [
-  { id:"SH001", date:"2026-03-15", plate:"WMJ-284", rule:"Engine Oil Change", mechanic:"Jun Dela Cruz",
-    parts:"Engine oil 10W-30 (8L), oil filter", labor:800, cost:2100, approvedBy:"Fleet Manager", notes:"" },
-  { id:"SH002", date:"2026-03-20", plate:"ULD-245", rule:"Brake Inspection", mechanic:"Romy Santos",
-    parts:"Brake pads (front)", labor:600, cost:3200, approvedBy:"Fleet Manager", notes:"Front pads replaced" },
-  { id:"SH003", date:"2026-03-25", plate:"KOH-464", rule:"Engine Oil Change", mechanic:"Jun Dela Cruz",
-    parts:"Engine oil 10W-30 (8L), oil filter", labor:800, cost:2100, approvedBy:"Fleet Manager", notes:"" },
-  { id:"SH004", date:"2026-04-01", plate:"U5V-991", rule:"Brake Inspection", mechanic:"Romy Santos",
-    parts:"Brake fluid top-up", labor:300, cost:450, approvedBy:"Fleet Manager", notes:"" },
-  { id:"SH005", date:"2026-04-05", plate:"NAN-597", rule:"Truck Wash", mechanic:"Fleet Crew",
-    parts:"Cleaning supplies", labor:500, cost:650, approvedBy:"Fleet Manager", notes:"" },
-];
-
-function LogModal({ vehicle, rule, rec, onSave, onClose }) {
+function LogModal({ target, onSave, onClose, submitting, error }) {
   const B = useB();
   const [mechanic, setMechanic] = useState("");
-  const [parts, setParts] = useState("");
-  const [labor, setLabor] = useState("");
-  const [notes, setNotes] = useState("");
+  const [parts,    setParts]    = useState([EMPTY_PART()]);
+  const [labor,    setLabor]    = useState("");
+  const [notes,    setNotes]    = useState("");
 
   const inp = {
-    width:"100%", background:B.navy, border:`1px solid ${B.navyBorder}`,
-    borderRadius:10, padding:"9px 12px", color:B.white, fontSize:13, outline:"none",
-    boxSizing:"border-box",
+    background: B.navy, border: `1px solid ${B.navyBorder}`,
+    borderRadius: 10, padding: "9px 12px", color: B.white, fontSize: 13,
+    outline: "none", boxSizing: "border-box",
   };
 
+  function updatePart(i, field, value) {
+    setParts(prev => prev.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
+  }
+  function addPart()      { setParts(prev => [...prev, EMPTY_PART()]); }
+  function removePart(i)  { setParts(prev => prev.filter((_, idx) => idx !== i)); }
+
+  const partsSubtotal = parts.reduce((sum, p) => sum + (parseFloat(p.qty) || 0) * (parseFloat(p.unit_cost) || 0), 0);
+  const totalCost     = partsSubtotal + (parseFloat(labor) || 0);
+
   function handleSubmit() {
-    onSave({ mechanic, parts, labor: parseFloat(labor)||0, notes });
+    const validParts = parts.filter(p => p.name.trim());
+    onSave({
+      mechanic,
+      parts_used:  validParts.length ? validParts.map(p => ({
+        name:      p.name.trim(),
+        qty:       parseFloat(p.qty)       || 1,
+        unit_cost: parseFloat(p.unit_cost) || 0,
+      })) : null,
+      labor_cost: parseFloat(labor) || 0,
+      notes,
+    });
   }
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:100,
-      display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-      <div style={{ background:B.navyMid, borderRadius:16, padding:20, width:"100%", maxWidth:420 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:14 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 100,
+      overflowY: "auto", padding: 16 }}>
+      <div style={{ background: B.navyMid, borderRadius: 16, padding: 20, width: "100%", maxWidth: 460, margin: "0 auto" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
           <div>
-            <div style={{ color:B.white, fontWeight:700, fontSize:15 }}>Log Service</div>
-            <div style={{ color:B.muted, fontSize:12 }}>{vehicle.plate} — {rule.label}</div>
+            <div style={{ color: B.white, fontWeight: 700, fontSize: 15 }}>Log Service</div>
+            <div style={{ color: B.muted, fontSize: 12 }}>{target.plate} — {target.pm_rule_label}</div>
           </div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:B.muted, fontSize:18, cursor:"pointer" }}>✕</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: B.muted, fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
 
-        {[["Mechanic / Crew", mechanic, setMechanic, "Name"],
-          ["Parts Used", parts, setParts, "List parts and quantities"],
-          ["Labor Cost (₱)", labor, setLabor, "0", "number"]].map(([label, val, set, placeholder, type])=>(
-          <div key={label} style={{ marginBottom:12 }}>
-            <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>{label}</div>
-            <input value={val} onChange={e=>set(e.target.value)} placeholder={placeholder}
-              type={type||"text"} style={inp} />
-          </div>
-        ))}
-
-        <div style={{ marginBottom:16 }}>
-          <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Notes</div>
-          <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={2}
-            placeholder="Additional notes…" style={{ ...inp, resize:"none" }} />
+        {/* Mechanic */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ color: B.muted, fontSize: 11, marginBottom: 4 }}>Mechanic / Crew</div>
+          <input value={mechanic} onChange={e => setMechanic(e.target.value)}
+            placeholder="Name" style={{ ...inp, width: "100%" }} />
         </div>
 
-        <div style={{ display:"flex", gap:10 }}>
-          <button onClick={onClose} style={{
-            flex:1, padding:"10px 0", borderRadius:10, border:`1px solid ${B.navyBorder}`,
-            background:"transparent", color:B.white, fontWeight:700, cursor:"pointer",
+        {/* Parts Used */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <div style={{ color: B.muted, fontSize: 11 }}>Parts Used</div>
+            <button onClick={addPart} style={{
+              background: "none", border: `1px solid ${B.navyBorder}`, borderRadius: 6,
+              color: B.blueLight, fontSize: 11, fontWeight: 700, padding: "2px 10px", cursor: "pointer",
+            }}>+ Add Part</button>
+          </div>
+
+          {/* Column headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 24px", gap: 6, marginBottom: 4 }}>
+            {["Part Name", "Qty", "Unit Cost (₱)", ""].map(h => (
+              <div key={h} style={{ color: B.muted, fontSize: 10, fontWeight: 700 }}>{h}</div>
+            ))}
+          </div>
+
+          {parts.map((part, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 24px", gap: 6, marginBottom: 6 }}>
+              <input value={part.name} onChange={e => updatePart(i, "name", e.target.value)}
+                placeholder="e.g. Engine Oil" style={{ ...inp }} />
+              <input value={part.qty} onChange={e => updatePart(i, "qty", e.target.value)}
+                type="number" min="0" step="0.5" placeholder="1" style={{ ...inp, textAlign: "right" }} />
+              <input value={part.unit_cost} onChange={e => updatePart(i, "unit_cost", e.target.value)}
+                type="number" min="0" step="0.01" placeholder="0" style={{ ...inp, textAlign: "right" }} />
+              <button onClick={() => removePart(i)} disabled={parts.length === 1}
+                style={{ background: "none", border: "none", color: parts.length === 1 ? B.navyBorder : B.redLight,
+                  fontSize: 16, cursor: parts.length === 1 ? "default" : "pointer", padding: 0 }}>×</button>
+            </div>
+          ))}
+
+          {/* Parts subtotal */}
+          {parts.some(p => p.name.trim()) && (
+            <div style={{ textAlign: "right", color: B.muted, fontSize: 11, marginTop: 4 }}>
+              Parts subtotal: <span style={{ color: B.offWhite, fontWeight: 600 }}>
+                ₱{partsSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Labor Cost */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ color: B.muted, fontSize: 11, marginBottom: 4 }}>Labor Cost (₱)</div>
+          <input value={labor} onChange={e => setLabor(e.target.value)}
+            type="number" min="0" placeholder="0" style={{ ...inp, width: "100%" }} />
+        </div>
+
+        {/* Total cost summary */}
+        {(partsSubtotal > 0 || parseFloat(labor) > 0) && (
+          <div style={{ background: B.navyLight, borderRadius: 8, padding: "8px 12px", marginBottom: 14,
+            display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: B.muted, fontSize: 12 }}>Total Cost</span>
+            <span style={{ color: B.greenLight, fontWeight: 700, fontSize: 14 }}>
+              ₱{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+        )}
+
+        {/* Notes */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ color: B.muted, fontSize: 11, marginBottom: 4 }}>Notes</div>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
+            placeholder="Additional notes…" style={{ ...inp, width: "100%", resize: "none" }} />
+        </div>
+
+        {error && <p style={{ color: B.redLight, fontSize: 12, marginBottom: 10 }}>{error}</p>}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} disabled={submitting} style={{
+            flex: 1, padding: "10px 0", borderRadius: 10, border: `1px solid ${B.navyBorder}`,
+            background: "transparent", color: B.white, fontWeight: 700, cursor: "pointer",
           }}>Cancel</button>
-          <button onClick={handleSubmit} style={{
-            flex:2, padding:"10px 0", borderRadius:10, border:"none",
-            background:B.blue, color:"#FFFFFF", fontWeight:700, fontSize:14, cursor:"pointer",
-          }}>Submit for Approval</button>
+          <button onClick={handleSubmit} disabled={submitting} style={{
+            flex: 2, padding: "10px 0", borderRadius: 10, border: "none",
+            background: B.blue, color: "#FFFFFF", fontWeight: 700, fontSize: 14,
+            cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1,
+          }}>
+            {submitting ? "Submitting…" : "Submit for Approval"}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
+// ── Main component ───────────────────────────────────────────────────────────
 export default function MaintenanceEngine() {
   const B = useB();
-  const [records, setRecords] = useState(SEED_RECORDS);
-  const [pending, setPending] = useState({});
-  const [tab, setTab] = useState("schedule");
-  const [filterVehicle, setFilterVehicle] = useState("all");
-  const [logTarget, setLogTarget] = useState(null);
 
-  function handleLogSubmit({ mechanic, parts, labor, notes }) {
-    const { vehicle, rule } = logTarget;
-    const serviceId = `SH${String(Object.keys(pending).length + SERVICE_HISTORY.length + 1).padStart(3,"0")}`;
-    setPending(prev => ({
-      ...prev,
-      [serviceId]: {
-        id: serviceId, date: TODAY.toISOString().slice(0,10),
-        plate: vehicle.plate, rule: rule.label, mechanic, parts,
-        labor, cost: labor, notes, status:"pending",
-      }
-    }));
-    setLogTarget(null);
-  }
+  const [scheduleData,    setScheduleData]    = useState([]);
+  const [pendingLogs,     setPendingLogs]     = useState([]);
+  const [completedLogs,   setCompletedLogs]   = useState([]);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  const [loadingLogs,     setLoadingLogs]     = useState(false);
+  const [tab,             setTab]             = useState("schedule");
+  const [filterVehicle,   setFilterVehicle]   = useState("all");
+  const [logTarget,        setLogTarget]        = useState(null);
+  const [submitting,       setSubmitting]       = useState(false);
+  const [logError,         setLogError]         = useState(null);
+  const [expandedPending,  setExpandedPending]  = useState(null);
 
-  function confirmApprove(serviceId) {
-    const entry = pending[serviceId];
-    if (!entry) return;
-    setRecords(prev => ({
-      ...prev,
-      [entry.plate]: {
-        ...(prev[entry.plate]||{}),
-        [PM_RULES.find(r=>r.label===entry.rule)?.id||""]:
-          mkRec(TODAY.toISOString().slice(0,10), 0, 0),
-      }
-    }));
-    setPending(prev => {
-      const next = {...prev};
-      delete next[serviceId];
-      return next;
+  // ── Data fetching ──────────────────────────────────────────────────────────
+  const loadSchedule = useCallback(() => {
+    setLoadingSchedule(true);
+    fetchPmSchedule()
+      .then(res => setScheduleData(res.data ?? []))
+      .catch(console.error)
+      .finally(() => setLoadingSchedule(false));
+  }, []);
+
+  const loadLogs = useCallback(() => {
+    setLoadingLogs(true);
+    Promise.all([
+      fetchServiceLogs({ status: "pending",  per_page: 100 }),
+      fetchServiceLogs({ status: "approved", per_page: 50  }),
+    ])
+      .then(([pending, completed]) => {
+        setPendingLogs(pending.data   ?? []);
+        setCompletedLogs(completed.data ?? []);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingLogs(false));
+  }, []);
+
+  useEffect(() => { loadSchedule(); loadLogs(); }, [loadSchedule, loadLogs]);
+
+  // ── Derived data ───────────────────────────────────────────────────────────
+
+  // Unique vehicles for the dropdown filter
+  const vehicleOptions = useMemo(() => {
+    const seen = new Set();
+    return scheduleData.filter(row => {
+      if (seen.has(row.vehicle_id)) return false;
+      seen.add(row.vehicle_id);
+      return true;
     });
+  }, [scheduleData]);
+
+  const scheduleRows = useMemo(() =>
+    filterVehicle === "all"
+      ? scheduleData
+      : scheduleData.filter(r => String(r.vehicle_id) === filterVehicle),
+    [scheduleData, filterVehicle]
+  );
+
+  const overdueCount = scheduleData.filter(r => r.status === "overdue").length;
+  const dueSoonCount = scheduleData.filter(r => r.status === "due_soon").length;
+
+  // ── Actions ────────────────────────────────────────────────────────────────
+  async function handleLogSubmit({ mechanic, parts_used, labor_cost, notes }) {
+    setSubmitting(true);
+    setLogError(null);
+    try {
+      await logService({
+        vehicle_id:  logTarget.vehicle_id,
+        pm_rule_id:  logTarget.pm_rule_id,
+        mechanic:    mechanic   || null,
+        parts_used:  parts_used || null,
+        labor_cost,
+        notes:       notes || null,
+      });
+      setLogTarget(null);
+      loadLogs();
+    } catch (err) {
+      setLogError(err.message || "Failed to submit. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  const filteredVehicles = filterVehicle === "all" ? VEHICLES : VEHICLES.filter(v=>v.plate===filterVehicle);
+  async function handleApprove(logId) {
+    try {
+      await approveServiceLog(logId);
+      loadLogs();      // refresh service log lists
+      loadSchedule();  // approval resets PM counter — refresh schedule too
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
-  const scheduleRows = filteredVehicles.flatMap(v =>
-    PM_RULES.filter(r => r.types.includes(v.type)).map(rule => {
-      const rec = records[v.plate]?.[rule.id] || mkRec(dAgo(0), 0, 0, true);
-      const s = computeStatus(rule, rec);
-      return { vehicle:v, rule, rec, ...s };
-    })
-  ).sort((a,b) => b.pct - a.pct);
-
-  const overdueCount = scheduleRows.filter(r=>r.status==="overdue").length;
-  const dueSoonCount = scheduleRows.filter(r=>r.status==="due-soon").length;
-  const pendingCount = Object.keys(pending).length;
+  // ── Style helpers ──────────────────────────────────────────────────────────
+  function statusBadgeStyle(status) {
+    if (status === "overdue")  return { bg: B.statusRedBg,    color: "#dc2626" };
+    if (status === "due_soon") return { bg: B.statusYellowBg, color: "#ca8a04" };
+    return { bg: B.navyLight, color: "#4ade80" };
+  }
+  const statusLabel = s => s === "overdue" ? "OVERDUE" : s === "due_soon" ? "DUE SOON" : "OK";
+  const barColor    = s => s === "overdue" ? "#dc2626" : s === "due_soon" ? "#fde047" : "#4ade80";
 
   return (
-    <div style={{ minHeight:"unset", background:B.navy, display:"flex", flexDirection:"column" }}>
-      <div style={{ padding:"16px 16px 0" }}>
-        <h2 style={{ color:B.white, fontSize:20, fontWeight:700, marginBottom:2 }}>Maintenance Engine</h2>
-        <p style={{ color:B.muted, fontSize:12, marginBottom:10 }}>Preventive Maintenance Scheduler</p>
+    <div style={{ minHeight: "unset", background: B.navy, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "16px 16px 0" }}>
+        <h2 style={{ color: B.white, fontSize: 20, fontWeight: 700, marginBottom: 2 }}>Maintenance Engine</h2>
+        <p style={{ color: B.muted, fontSize: 12, marginBottom: 10 }}>Preventive Maintenance Scheduler</p>
 
-        {/* Summary counts */}
-        <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-          {[["Overdue", overdueCount, B.red],["Due Soon", dueSoonCount, B.yellowLight],["Pending Approval", pendingCount, B.blueLight]].map(([l,v,c])=>(
-            <div key={l} style={{ flex:1, background:B.navyMid, borderRadius:10, padding:"8px 10px",
-              border:`1px solid ${B.navyBorder}`, textAlign:"center" }}>
-              <div style={{ color:c, fontSize:18, fontWeight:800 }}>{v}</div>
-              <div style={{ color:B.muted, fontSize:10 }}>{l}</div>
+        {/* Summary counters */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          {[
+            ["Overdue",          overdueCount,    B.red],
+            ["Due Soon",         dueSoonCount,    B.yellowLight],
+            ["Pending Approval", pendingLogs.length, B.blueLight],
+          ].map(([l, v, c]) => (
+            <div key={l} style={{ flex: 1, background: B.navyMid, borderRadius: 10, padding: "8px 10px",
+              border: `1px solid ${B.navyBorder}`, textAlign: "center" }}>
+              <div style={{ color: c, fontSize: 18, fontWeight: 800 }}>{v}</div>
+              <div style={{ color: B.muted, fontSize: 10 }}>{l}</div>
             </div>
           ))}
         </div>
 
-        <div style={{ display:"flex", gap:0, borderBottom:`1px solid ${B.navyBorder}` }}>
-          {[["schedule","PM Schedule"],["history","Service Log"]].map(([k,label])=>(
-            <button key={k} onClick={()=>setTab(k)} style={{
-              padding:"8px 16px", border:"none", cursor:"pointer", fontSize:12, fontWeight:700,
-              background:"transparent", color:tab===k?B.white:B.muted,
-              borderBottom:`2px solid ${tab===k?B.blue:"transparent"}`,
+        {/* Tab bar */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${B.navyBorder}` }}>
+          {[["schedule", "PM Schedule"], ["history", "Service Log"]].map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              padding: "8px 16px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
+              background: "transparent", color: tab === k ? B.white : B.muted,
+              borderBottom: `2px solid ${tab === k ? B.blue : "transparent"}`,
             }}>{label}</button>
           ))}
         </div>
       </div>
 
-      <div style={{ flex:1, overflowY:"auto", padding:16 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+
+        {/* ── PM Schedule ── */}
         {tab === "schedule" && (
           <div>
-            <div style={{ marginBottom:12 }}>
-              <select value={filterVehicle} onChange={e=>setFilterVehicle(e.target.value)}
-                style={{ width:"100%", background:B.navyMid, border:`1px solid ${B.navyBorder}`,
-                  borderRadius:8, padding:"8px 12px", color:B.white, fontSize:12, outline:"none" }}>
+            <div style={{ marginBottom: 12 }}>
+              <select value={filterVehicle} onChange={e => setFilterVehicle(e.target.value)}
+                style={{ width: "100%", background: B.navyMid, border: `1px solid ${B.navyBorder}`,
+                  borderRadius: 8, padding: "8px 12px", color: B.white, fontSize: 12, outline: "none" }}>
                 <option value="all">All Vehicles</option>
-                {VEHICLES.map(v=><option key={v.id} value={v.plate}>{v.plate} — {v.make} {v.model}</option>)}
+                {vehicleOptions.map(v => (
+                  <option key={v.vehicle_id} value={String(v.vehicle_id)}>
+                    {v.plate} — {v.make} {v.model}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {scheduleRows.map((row,i)=>{
-              const { vehicle:v, rule, rec, status, pct, bar } = row;
+            {loadingSchedule ? (
+              <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
+                Loading schedule…
+              </p>
+            ) : scheduleRows.map(row => {
+              const { vehicle_id, plate, pm_rule_id, pm_rule_label,
+                      trip_limit, km_limit, last_service_date,
+                      trips_since, km_since, status, pct } = row;
+              const s = statusBadgeStyle(status);
               return (
-                <div key={`${v.id}-${rule.id}`} style={{
-                  background:B.navyMid, borderRadius:12, padding:"12px 14px", marginBottom:8,
-                  border:`1px solid ${status==="overdue"?B.redBorder:B.navyBorder}`,
+                <div key={`${vehicle_id}-${pm_rule_id}`} style={{
+                  background: B.navyMid, borderRadius: 12, padding: "12px 14px", marginBottom: 8,
+                  border: `1px solid ${status === "overdue" ? B.redBorder : B.navyBorder}`,
                 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                     <div>
-                      <span style={{ color:B.white, fontWeight:700, fontSize:13 }}>{v.plate}</span>
-                      <span style={{ color:B.muted, fontSize:11, marginLeft:8 }}>{rule.label}</span>
+                      <span style={{ color: B.white, fontWeight: 700, fontSize: 13 }}>{plate}</span>
+                      <span style={{ color: B.muted, fontSize: 11, marginLeft: 8 }}>{pm_rule_label}</span>
                     </div>
                     <span style={{
-                      fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20,
-                      background: status==="overdue"?B.statusRedBg:status==="due-soon"?B.statusYellowBg:B.navyLight,
-                      color: bar,
-                    }}>{status==="overdue"?"OVERDUE":status==="due-soon"?"DUE SOON":"OK"}</span>
+                      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+                      background: s.bg, color: s.color,
+                    }}>{statusLabel(status)}</span>
                   </div>
 
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                    <div style={{ flex:1, height:4, background:B.navyLight, borderRadius:4, overflow:"hidden" }}>
-                      <div style={{ height:"100%", width:`${Math.min(pct,100)}%`, background:bar }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ flex: 1, height: 4, background: B.navyLight, borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${Math.min(pct, 100)}%`, background: barColor(status) }} />
                     </div>
-                    <span style={{ color:B.muted, fontSize:10, whiteSpace:"nowrap" }}>{Math.min(Math.round(pct),200)}%</span>
+                    <span style={{ color: B.muted, fontSize: 10, whiteSpace: "nowrap" }}>
+                      {Math.min(Math.round(pct), 200)}%
+                    </span>
                   </div>
 
-                  <div style={{ display:"flex", gap:12, fontSize:11 }}>
-                    <span style={{ color:B.muted }}>Last: {rec.lastServiceDate}</span>
-                    <span style={{ color:B.muted }}>Trips: {rec.tripsSince}/{rule.tripLimit||"—"}</span>
-                    <span style={{ color:B.muted }}>KM: {rec.kmSince}/{rule.kmLimit||"—"}</span>
+                  <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
+                    <span style={{ color: B.muted }}>Last: {last_service_date ?? "—"}</span>
+                    <span style={{ color: B.muted }}>Trips: {trips_since}/{trip_limit ?? "—"}</span>
+                    <span style={{ color: B.muted }}>KM: {km_since}/{km_limit ?? "—"}</span>
                   </div>
 
                   {status !== "ok" && (
-                    <button onClick={()=>setLogTarget({vehicle:v,rule,rec})} style={{
-                      marginTop:8, padding:"6px 14px", borderRadius:8, border:"none",
-                      background:B.blue, color:"#FFFFFF", fontSize:11, fontWeight:700, cursor:"pointer",
-                    }}>Log Service</button>
+                    <button
+                      onClick={() => { setLogError(null); setLogTarget({ vehicle_id, plate, pm_rule_id, pm_rule_label }); }}
+                      style={{ marginTop: 8, padding: "6px 14px", borderRadius: 8, border: "none",
+                        background: B.blue, color: "#FFFFFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                      Log Service
+                    </button>
                   )}
                 </div>
               );
@@ -300,44 +357,171 @@ export default function MaintenanceEngine() {
           </div>
         )}
 
+        {/* ── Service Log ── */}
         {tab === "history" && (
           <div>
-            {pendingCount > 0 && (
+            {/* Pending approval */}
+            {pendingLogs.length > 0 && (
               <div>
-                <div style={{ color:B.yellowLight, fontSize:11, fontWeight:700, marginBottom:8 }}>PENDING APPROVAL ({pendingCount})</div>
-                {Object.values(pending).map(entry=>(
-                  <div key={entry.id} style={{ background:B.statusYellowBg, borderRadius:12, padding:12,
-                    marginBottom:8, border:`1px solid ${B.statusYellowBorder}` }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                      <span style={{ color:B.yellowLight, fontWeight:700, fontSize:13 }}>{entry.plate}</span>
-                      <span style={{ color:B.muted, fontSize:11 }}>{entry.date}</span>
+                <div style={{ color: "#78350f", fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+                  PENDING APPROVAL ({pendingLogs.length})
+                </div>
+                {pendingLogs.map(entry => {
+                  const isOpen      = expandedPending === entry.id;
+                  const parts       = Array.isArray(entry.parts_used) ? entry.parts_used : [];
+                  const partsSub    = parts.reduce((s, p) => s + (p.qty ?? 0) * (p.unit_cost ?? 0), 0);
+                  const total       = partsSub + (parseFloat(entry.labor_cost) || 0);
+                  return (
+                    <div key={entry.id} style={{ background: B.statusYellowBg, borderRadius: 12,
+                      marginBottom: 8, border: `1px solid ${B.statusYellowBorder}`, overflow: "hidden" }}>
+
+                      {/* Clickable header */}
+                      <div onClick={() => setExpandedPending(isOpen ? null : entry.id)}
+                        style={{ padding: 12, cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ color: "#78350f", fontWeight: 700, fontSize: 13 }}>
+                            {entry.vehicle?.plate ?? "—"}
+                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ color: "#78350f", fontWeight: 700, fontSize: 12 }}>
+                              ₱{total.toLocaleString(undefined, { minimumFractionDigits: 0 })}
+                            </span>
+                            <span style={{ color: "#57534e", fontSize: 11 }}>{entry.service_date}</span>
+                            <span style={{ color: "#57534e", fontSize: 11 }}>{isOpen ? "▲" : "▼"}</span>
+                          </div>
+                        </div>
+                        <div style={{ color: "#1c1917", fontSize: 12, marginBottom: 2 }}>
+                          {entry.pm_rule?.label ?? "—"}
+                        </div>
+                        {entry.mechanic && (
+                          <div style={{ color: "#57534e", fontSize: 11 }}>Mechanic: {entry.mechanic}</div>
+                        )}
+                      </div>
+
+                      {/* Accordion body */}
+                      {isOpen && (
+                        <div style={{ borderTop: `1px solid ${B.statusYellowBorder}`, padding: "10px 12px 12px" }}>
+                          {/* Parts */}
+                          {parts.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <div style={{ color: "#57534e", fontSize: 10, fontWeight: 700,
+                                letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>
+                                Parts Used
+                              </div>
+                              {parts.map((p, i) => (
+                                <div key={i} style={{ display: "flex", justifyContent: "space-between",
+                                  fontSize: 12, marginBottom: 3 }}>
+                                  <span style={{ color: "#1c1917" }}>{p.name} × {p.qty}</span>
+                                  <span style={{ color: "#57534e" }}>
+                                    ₱{((p.qty ?? 0) * (p.unit_cost ?? 0)).toLocaleString()}
+                                  </span>
+                                </div>
+                              ))}
+                              <div style={{ display: "flex", justifyContent: "space-between",
+                                fontSize: 11, color: "#57534e", marginTop: 4,
+                                borderTop: `1px solid ${B.statusYellowBorder}`, paddingTop: 4 }}>
+                                <span>Parts subtotal</span>
+                                <span>₱{partsSub.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Labor */}
+                          {parseFloat(entry.labor_cost) > 0 && (
+                            <div style={{ display: "flex", justifyContent: "space-between",
+                              fontSize: 12, marginBottom: 8 }}>
+                              <span style={{ color: "#57534e" }}>Labor Cost</span>
+                              <span style={{ color: "#1c1917" }}>
+                                ₱{Number(entry.labor_cost).toLocaleString()}
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Total */}
+                          <div style={{ display: "flex", justifyContent: "space-between",
+                            fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
+                            <span style={{ color: "#78350f" }}>Total</span>
+                            <span style={{ color: "#78350f" }}>
+                              ₱{total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          {entry.notes && (
+                            <div style={{ color: "#57534e", fontSize: 11, fontStyle: "italic", marginBottom: 10 }}>
+                              {entry.notes}
+                            </div>
+                          )}
+
+                          <button onClick={() => handleApprove(entry.id)} style={{
+                            width: "100%", padding: "8px 0", borderRadius: 8, border: "none",
+                            background: B.green, color: "#FFFFFF", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                          }}>✓ Approve & Record</button>
+                        </div>
+                      )}
+
+                      {/* Approve button visible when collapsed too */}
+                      {!isOpen && (
+                        <div style={{ padding: "0 12px 12px" }}>
+                          <button onClick={() => handleApprove(entry.id)} style={{
+                            padding: "6px 14px", borderRadius: 8, border: "none", background: B.green,
+                            color: "#FFFFFF", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                          }}>✓ Approve & Record</button>
+                        </div>
+                      )}
                     </div>
-                    <div style={{ color:B.offWhite, fontSize:12, marginBottom:4 }}>{entry.rule}</div>
-                    <div style={{ color:B.muted, fontSize:11, marginBottom:8 }}>Mechanic: {entry.mechanic}</div>
-                    <button onClick={()=>confirmApprove(entry.id)} style={{
-                      padding:"6px 14px", borderRadius:8, border:"none", background:B.green,
-                      color:"#FFFFFF", fontSize:11, fontWeight:700, cursor:"pointer",
-                    }}>✓ Approve & Record</button>
-                  </div>
-                ))}
-                <div style={{ borderBottom:`1px solid ${B.navyBorder}`, marginBottom:12 }} />
+                  );
+                })}
+                <div style={{ borderBottom: `1px solid ${B.navyBorder}`, marginBottom: 12 }} />
               </div>
             )}
 
-            <div style={{ color:B.muted, fontSize:11, fontWeight:700, marginBottom:8 }}>COMPLETED SERVICE LOG</div>
-            {SERVICE_HISTORY.map(entry=>(
-              <div key={entry.id} style={{ background:B.navyMid, borderRadius:12, padding:12,
-                marginBottom:8, border:`1px solid ${B.navyBorder}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                  <span style={{ color:B.white, fontWeight:700, fontSize:13 }}>{entry.plate}</span>
-                  <span style={{ color:B.muted, fontSize:11 }}>{entry.date}</span>
+            {/* Completed service log */}
+            <div style={{ color: B.muted, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+              COMPLETED SERVICE LOG
+            </div>
+            {loadingLogs ? (
+              <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "16px 0" }}>Loading…</p>
+            ) : completedLogs.length === 0 ? (
+              <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "16px 0" }}>
+                No completed service records yet.
+              </p>
+            ) : completedLogs.map(entry => (
+              <div key={entry.id} style={{ background: B.navyMid, borderRadius: 12, padding: 12,
+                marginBottom: 8, border: `1px solid ${B.navyBorder}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: B.white, fontWeight: 700, fontSize: 13 }}>
+                    {entry.vehicle?.plate ?? "—"}
+                  </span>
+                  <span style={{ color: B.muted, fontSize: 11 }}>{entry.service_date}</span>
                 </div>
-                <div style={{ color:B.offWhite, fontSize:12, marginBottom:4 }}>{entry.rule}</div>
-                <div style={{ color:B.muted, fontSize:11, marginBottom:2 }}>Mechanic: {entry.mechanic}</div>
-                {entry.parts && <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Parts: {entry.parts}</div>}
-                <div style={{ display:"flex", gap:12 }}>
-                  <span style={{ color:B.greenLight, fontSize:11 }}>₱{entry.cost.toLocaleString()}</span>
-                  <span style={{ color:B.muted, fontSize:11 }}>Approved by: {entry.approvedBy}</span>
+                <div style={{ color: B.offWhite, fontSize: 12, marginBottom: 4 }}>
+                  {entry.pm_rule?.label ?? "—"}
+                </div>
+                {entry.mechanic && (
+                  <div style={{ color: B.muted, fontSize: 11, marginBottom: 4 }}>
+                    Mechanic: {entry.mechanic}
+                  </div>
+                )}
+                {/* Itemized parts list */}
+                {Array.isArray(entry.parts_used) && entry.parts_used.length > 0 && (
+                  <div style={{ marginBottom: 6 }}>
+                    {entry.parts_used.map((p, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                        <span style={{ color: B.offWhite }}>{p.name} × {p.qty}</span>
+                        <span style={{ color: B.muted }}>
+                          ₱{((p.qty ?? 0) * (p.unit_cost ?? 0)).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 12 }}>
+                  <span style={{ color: B.greenLight, fontSize: 11 }}>
+                    Total: ₱{Number(entry.total_cost ?? entry.labor_cost ?? 0).toLocaleString()}
+                  </span>
+                  {entry.approved_by && (
+                    <span style={{ color: B.muted, fontSize: 11 }}>Approved by: {entry.approved_by}</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -345,13 +529,14 @@ export default function MaintenanceEngine() {
         )}
       </div>
 
+      {/* Log Service modal */}
       {logTarget && (
         <LogModal
-          vehicle={logTarget.vehicle}
-          rule={logTarget.rule}
-          rec={logTarget.rec}
+          target={logTarget}
           onSave={handleLogSubmit}
-          onClose={()=>setLogTarget(null)}
+          onClose={() => setLogTarget(null)}
+          submitting={submitting}
+          error={logError}
         />
       )}
     </div>
