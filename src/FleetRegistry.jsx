@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useB } from "./contexts/ThemeContext";
+import { fetchInspections, fetchInspectionDetail } from "./api/inspections";
 
 const TERMS_OPTS = ["Cash","12 Months","24 Months","36 Months","60 Months","Rental"];
 
@@ -213,9 +214,28 @@ export default function FleetRegistry() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // Inspection history
+  const [historyVehicle, setHistoryVehicle] = useState(null);
+  const [historyItems,   setHistoryItems]   = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [expandedId,     setExpandedId]     = useState(null);
+  const [loadedItems,    setLoadedItems]    = useState({});  // { [inspectionId]: items[] }
+  const [loadingItemId,  setLoadingItemId]  = useState(null);
+  const [activeTab,      setActiveTab]      = useState({});  // { [inspectionId]: sectionLabel }
+
   function showToast(msg, type="success") {
     setToast({ msg, type });
     setTimeout(()=>setToast(null), 3000);
+  }
+
+  function openHistory(v) {
+    setHistoryVehicle(v);
+    setHistoryItems([]);
+    setLoadingHistory(true);
+    fetchInspections({ vehicle_plate: v.plate, per_page: 50 })
+      .then(res => setHistoryItems(res.data ?? []))
+      .catch(() => setHistoryItems([]))
+      .finally(() => setLoadingHistory(false));
   }
 
   const filtered = useMemo(()=>{
@@ -345,6 +365,10 @@ export default function FleetRegistry() {
                     flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.blue}`,
                     background:"transparent", color:B.blueLight, fontSize:12, fontWeight:700, cursor:"pointer",
                   }}>Edit</button>
+                  <button onClick={()=>openHistory(v)} style={{
+                    flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.navyBorder}`,
+                    background:"transparent", color:B.muted, fontSize:12, fontWeight:700, cursor:"pointer",
+                  }}>History</button>
                   {v.status==="active" ? (
                     <button onClick={()=>handleRetire(v)} style={{
                       flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.navyBorder}`,
@@ -403,6 +427,181 @@ export default function FleetRegistry() {
                 background:B.blue, color:"#FFFFFF", fontWeight:700, fontSize:14, cursor:"pointer",
               }}>Save Vehicle</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inspection History Modal */}
+      {historyVehicle && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:100, overflowY:"auto", padding:"20px 16px" }}>
+          <div style={{ background:B.navyMid, borderRadius:16, padding:20, maxWidth:600, margin:"0 auto" }}>
+
+            {/* Header */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <div>
+                <h3 style={{ color:B.white, fontSize:16, fontWeight:700, marginBottom:2 }}>
+                  {historyVehicle.plate} — Inspection History
+                </h3>
+                <p style={{ color:B.muted, fontSize:12 }}>
+                  {historyVehicle.make} {historyVehicle.model} · {historyVehicle.type}
+                </p>
+              </div>
+              <button onClick={()=>{ setHistoryVehicle(null); setHistoryItems([]); setExpandedId(null); setLoadedItems({}); }}
+                style={{ background:"none", border:"none", color:B.muted, fontSize:20, cursor:"pointer" }}>✕</button>
+            </div>
+
+            {/* Content */}
+            {loadingHistory ? (
+              <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>Loading…</p>
+            ) : historyItems.length === 0 ? (
+              <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>
+                No inspection records found.
+              </p>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {historyItems.map(insp => {
+                  const isPre      = insp.inspection_type === "pre";
+                  const hasFlags   = insp.flagged_count > 0;
+                  const dateStr    = insp.trip?.trip_date ?? insp.submitted_at?.slice(0,10) ?? "—";
+                  const isExpanded = expandedId === insp.id;
+                  const items      = loadedItems[insp.id];
+                  const isLoading  = loadingItemId === insp.id;
+
+                  // Group items by section when available
+                  const sections = items
+                    ? Object.values(
+                        items.reduce((acc, item) => {
+                          const key = item.section_label;
+                          if (!acc[key]) acc[key] = { label: key, sort: item.section_sort, items: [] };
+                          acc[key].items.push(item);
+                          return acc;
+                        }, {})
+                      ).sort((a, b) => a.sort - b.sort)
+                    : [];
+
+                  function toggleExpand() {
+                    if (isExpanded) {
+                      setExpandedId(null);
+                      return;
+                    }
+                    setExpandedId(insp.id);
+                    if (!loadedItems[insp.id]) {
+                      setLoadingItemId(insp.id);
+                      fetchInspectionDetail(insp.id)
+                        .then(res => setLoadedItems(prev => ({ ...prev, [insp.id]: res.data?.items ?? [] })))
+                        .catch(() => setLoadedItems(prev => ({ ...prev, [insp.id]: [] })))
+                        .finally(() => setLoadingItemId(null));
+                    }
+                  }
+
+                  return (
+                    <div key={insp.id} style={{
+                      background:B.navyLight, borderRadius:12, overflow:"hidden",
+                      border:`1px solid ${hasFlags ? B.statusRedBorder : B.navyBorder}`,
+                    }}>
+                      {/* Accordion Header — always visible, clickable */}
+                      <div onClick={toggleExpand} style={{ padding:"12px 14px", cursor:"pointer" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <span style={{
+                              fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20,
+                              background: isPre ? "#0c1a2e" : "#1a1000",
+                              border: `1px solid ${isPre ? "#1d4ed8" : "#b45309"}`,
+                              color: isPre ? "#93c5fd" : "#fcd34d",
+                            }}>
+                              {isPre ? "Pre-Trip" : "Post-Trip"}
+                            </span>
+                            <span style={{ color:B.offWhite, fontSize:13, fontWeight:600 }}>{dateStr}</span>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                            <span style={{ color:B.greenLight, fontSize:12 }}>✓ {insp.passed_count}</span>
+                            {hasFlags && <span style={{ color:B.redLight, fontSize:12 }}>⚑ {insp.flagged_count}</span>}
+                            <span style={{ color:B.muted, fontSize:12 }}>{isExpanded ? "▲" : "▼"}</span>
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:16, fontSize:11, color:B.muted }}>
+                          {insp.driver  && <span>Driver: <span style={{ color:B.offWhite }}>{insp.driver}</span></span>}
+                          {insp.leadman && <span>Leadman: <span style={{ color:B.offWhite }}>{insp.leadman}</span></span>}
+                          {insp.trip_km && <span>KM: <span style={{ color:B.offWhite }}>{insp.trip_km}</span></span>}
+                          {insp.hours   && <span>Hours: <span style={{ color:B.offWhite }}>{insp.hours}</span></span>}
+                        </div>
+                        {insp.notes && (
+                          <p style={{ color:B.muted, fontSize:11, marginTop:4, fontStyle:"italic" }}>{insp.notes}</p>
+                        )}
+                      </div>
+
+                      {/* Expanded Body — section tabs + items */}
+                      {isExpanded && (
+                        <div style={{ borderTop:`1px solid ${B.navyBorder}` }}>
+                          {isLoading ? (
+                            <p style={{ color:B.muted, fontSize:12, textAlign:"center", padding:"16px 0" }}>Loading items…</p>
+                          ) : sections.length === 0 ? (
+                            <p style={{ color:B.muted, fontSize:12, textAlign:"center", padding:"16px 0" }}>No items recorded.</p>
+                          ) : (() => {
+                            const currentTab = activeTab[insp.id] ?? sections[0]?.label;
+                            const tabSection = sections.find(s => s.label === currentTab) ?? sections[0];
+                            return (
+                              <>
+                                {/* Tab bar */}
+                                <div style={{ display:"flex", overflowX:"auto", borderBottom:`1px solid ${B.navyBorder}` }}>
+                                  {sections.map(sec => {
+                                    const secHasFlags = sec.items.some(i => i.status === "flag");
+                                    const isActive    = currentTab === sec.label;
+                                    return (
+                                      <button
+                                        key={sec.label}
+                                        onClick={e => { e.stopPropagation(); setActiveTab(prev => ({ ...prev, [insp.id]: sec.label })); }}
+                                        style={{
+                                          flexShrink:0, padding:"12px 14px 14px", border:"none", cursor:"pointer",
+                                          background:"transparent", fontSize:11, fontWeight:700,
+                                          color: isActive ? (secHasFlags ? B.redLight : B.blueLight) : B.muted,
+                                          borderBottom: isActive ? `2px solid ${secHasFlags ? B.redLight : B.blue}` : "2px solid transparent",
+                                          whiteSpace:"nowrap", lineHeight:1.2,
+                                        }}
+                                      >
+                                        {sec.label}
+                                        {secHasFlags && <span style={{ color:B.redLight, marginLeft:4 }}>⚑</span>}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {/* Active tab items */}
+                                <div style={{ padding:"10px 14px" }}>
+                                  {tabSection?.items.sort((a,b) => a.item_sort - b.item_sort).map(item => (
+                                    <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:8 }}>
+                                      <span style={{
+                                        fontSize:13, fontWeight:700, flexShrink:0, marginTop:1,
+                                        color: item.status === "flag" ? B.redLight : B.greenLight,
+                                      }}>
+                                        {item.status === "flag" ? "⚑" : "✓"}
+                                      </span>
+                                      <div>
+                                        <span style={{ fontSize:12, color: item.status === "flag" ? B.redLight : B.offWhite }}>
+                                          {item.item_label}
+                                        </span>
+                                        {item.issue_description && (
+                                          <p style={{ color:B.redLight, fontSize:11, margin:"2px 0 0", fontStyle:"italic" }}>
+                                            {item.issue_description}
+                                          </p>
+                                        )}
+                                        {item.resolved_at && (
+                                          <p style={{ color:B.greenLight, fontSize:10, margin:"2px 0 0" }}>✓ Resolved</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
