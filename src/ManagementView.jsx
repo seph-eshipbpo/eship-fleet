@@ -110,7 +110,9 @@ function GoalGauge({ pct, label }) {
         <path d={`M ${cx-r},${cy} A ${r},${r} 0 0,1 ${cx+r},${cy}`}
           fill="none" stroke={color} strokeWidth={10} strokeLinecap="round"
           strokeDasharray={`${dash} ${circumference}`} />
-        <text x={cx} y={cy-6} textAnchor="middle" fill={color} fontSize={18} fontWeight={800}>{pct}%</text>
+        <text x={cx} y={cy-6} textAnchor="middle" fill={color} fontSize={pct > 0 && pct < 1 ? 13 : 18} fontWeight={800}>
+          {pct > 0 && pct < 1 ? "<1%" : `${pct}%`}
+        </text>
         <text x={cx} y={cy+12} textAnchor="middle" fill={B.muted} fontSize={10}>{label}</text>
       </svg>
     </div>
@@ -312,7 +314,7 @@ export default function ManagementView() {
           <div>
             <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
               <KpiCard label="Total Trips" value={totalTrips.toLocaleString()} sub={`YTD ${new Date().getFullYear()}`} color={B.blueLight} />
-              <KpiCard label="Total KM" value={(totalKm/1000).toFixed(1)+"k"} sub="YTD" color={B.offWhite} />
+              <KpiCard label="Total KM" value={totalKm >= 1000 ? (totalKm/1000).toFixed(1)+"k" : totalKm.toLocaleString(undefined,{maximumFractionDigits:1})} sub="YTD" color={B.offWhite} />
             </div>
             <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
               <KpiCard label="Breakdowns" value={bdTotalInc} sub={`${bdTotalHours}hrs total`} color={B.redLight} />
