@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { useB } from "./contexts/ThemeContext";
 import { getReportOverview, getReportCosts, getReportLocations } from "./api/reports";
-import { getReportBreakdowns } from "./api/breakdowns";
+import { getReportBreakdowns, createBreakdown, updateBreakdown, listBreakdownRootCauses } from "./api/breakdowns";
+import { api } from "./api/client";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -125,17 +126,35 @@ export default function ManagementView() {
   const [loadingOverview, setLoadingOverview] = useState(true);
   const [bdReport, setBdReport]               = useState(null);
   const [loadingBd, setLoadingBd]             = useState(false);
+
+  // ── Log Breakdown modal ────────────────────────────────────────────────────
+  const [showBdModal,    setShowBdModal]    = useState(false);
+  const [bdModalVehicles, setBdModalVehicles] = useState([]);
+  const [bdModalCauses,   setBdModalCauses]   = useState([]);
+  const [bdModalSaving,   setBdModalSaving]   = useState(false);
+  const [bdModalError,    setBdModalError]    = useState(null);
+  const [bdForm, setBdForm] = useState({
+    vehicle_id: "", breakdown_root_cause_id: "",
+    date: new Date().toISOString().slice(0,10),
+    started_at: "", issue: "", cost: "",
+  });
+
+  // ── Resolve breakdown inline form ──────────────────────────────────────────
+  const [resolvingId,       setResolvingId]       = useState(null);
+  const [resolveResolvedAt, setResolveResolvedAt] = useState("");
   const [costReport, setCostReport]           = useState(null);
   const [loadingCost, setLoadingCost]         = useState(false);
   const [locReport, setLocReport]             = useState(null);
   const [loadingLoc, setLoadingLoc]           = useState(false);
 
   useEffect(() => {
+    if (tab !== "overview") return;
+    setLoadingOverview(true);
     getReportOverview()
       .then(res => setOverview(res.data))
       .catch(() => {})
       .finally(() => setLoadingOverview(false));
-  }, []);
+  }, [tab]); // re-fetch every time the user returns to the Overview tab
 
   useEffect(() => {
     if (tab !== "breakdowns" || bdReport) return;
@@ -145,6 +164,71 @@ export default function ManagementView() {
       .catch(() => {})
       .finally(() => setLoadingBd(false));
   }, [tab]);
+
+  function refreshBdReport() {
+    setLoadingBd(true);
+    getReportBreakdowns()
+      .then(res => setBdReport(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingBd(false));
+  }
+
+  async function openBdModal() {
+    setShowBdModal(true);
+    setBdModalError(null);
+    setBdForm({ vehicle_id:"", breakdown_root_cause_id:"",
+      date: new Date().toISOString().slice(0,10), started_at:"", issue:"", cost:"" });
+    if (bdModalVehicles.length === 0) {
+      const [vRes, cRes] = await Promise.all([
+        api.get("/api/vehicles?status=active&per_page=100"),
+        listBreakdownRootCauses(),
+      ]);
+      setBdModalVehicles(vRes.data ?? []);
+      setBdModalCauses(cRes.data ?? []);
+    }
+  }
+
+  async function saveBdModal() {
+    const missing = [];
+    if (!bdForm.vehicle_id) missing.push("Vehicle");
+    if (!bdForm.issue?.trim()) missing.push("Issue Description");
+    if (!bdForm.cost) missing.push("Repair Cost");
+    if (missing.length) {
+      setBdModalError(`Please fill in: ${missing.join(", ")}.`); return;
+    }
+    setBdModalSaving(true); setBdModalError(null);
+    try {
+      await createBreakdown({
+        vehicle_id:              parseInt(bdForm.vehicle_id),
+        breakdown_root_cause_id: bdForm.breakdown_root_cause_id ? parseInt(bdForm.breakdown_root_cause_id) : null,
+        date:       bdForm.date,
+        started_at: bdForm.started_at || null,
+        issue:      bdForm.issue,
+        cost:       parseFloat(bdForm.cost),
+        status:     "open",
+      });
+      setShowBdModal(false);
+      refreshBdReport();
+    } catch (err) {
+      setBdModalError(err.message || "Failed to save breakdown.");
+    } finally {
+      setBdModalSaving(false);
+    }
+  }
+
+  async function resolveBreakdown(bdId) {
+    try {
+      await updateBreakdown(bdId, {
+        status:      "resolved",
+        resolved_at: resolveResolvedAt || new Date().toISOString(),
+      });
+      setResolvingId(null);
+      setResolveResolvedAt("");
+      refreshBdReport();
+    } catch {
+      // silent — user can retry
+    }
+  }
 
   useEffect(() => {
     if (tab !== "costs" || costReport) return;
@@ -156,7 +240,7 @@ export default function ManagementView() {
   }, [tab]);
 
   useEffect(() => {
-    if (tab !== "locations" || locReport) return;
+    if (tab !== "locations") return;
     setLoadingLoc(true);
     getReportLocations()
       .then(res => setLocReport(res.data))
@@ -304,38 +388,201 @@ export default function ManagementView() {
                   </div>
                 )}
 
+                {/* Log Breakdown button */}
+                <button onClick={openBdModal} style={{
+                  width:"100%", padding:"10px 0", borderRadius:10, border:"none", marginBottom:14,
+                  background:B.blue, color:"#fff", fontWeight:700, fontSize:13, cursor:"pointer",
+                }}>+ Log Breakdown Incident</button>
+
                 {bdList.length === 0 ? (
                   <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>No breakdown incidents recorded for this year.</p>
                 ) : (
                   <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                    {bdList.map(b=>(
-                      <div key={b.id} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-                          <div>
-                            <span style={{ color:B.muted, fontSize:10, marginRight:8 }}>{b.ref}</span>
-                            <span style={{ color:B.white, fontWeight:700, fontSize:14 }}>{b.plate}</span>
-                            {b.status === "open" && (
-                              <span style={{ marginLeft:8, fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:10,
-                                background:"#3a0e0a", border:"1px solid #7f1d1d", color:"#fca5a5" }}>OPEN</span>
-                            )}
+                    {bdList.map(b => {
+                      const isOpen      = b.status === "open";
+                      const isResolving = resolvingId === b.id;
+                      return (
+                        <div key={b.id} style={{ background:B.navyMid, borderRadius:12, padding:14,
+                          border:`1px solid ${isOpen ? "#7f1d1d" : B.navyBorder}` }}>
+
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                              <span style={{ color:B.muted, fontSize:10 }}>{b.ref}</span>
+                              <span style={{ color:B.white, fontWeight:700, fontSize:14 }}>{b.plate}</span>
+                              {isOpen ? (
+                                <span style={{ fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:10,
+                                  background:"#3a0e0a", border:"1px solid #7f1d1d", color:"#fca5a5" }}>OPEN</span>
+                              ) : (
+                                <span style={{ fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:10,
+                                  background:"#052e16", border:"1px solid #14532d", color:"#4ade80" }}>RESOLVED</span>
+                              )}
+                            </div>
+                            <span style={{ color:B.muted, fontSize:11 }}>{b.date}</span>
                           </div>
-                          <span style={{ color:B.muted, fontSize:11 }}>{b.date}</span>
+
+                          <div style={{ color:B.offWhite, fontSize:12, marginBottom:4 }}>{b.issue}</div>
+                          <div style={{ color:B.muted, fontSize:11, marginBottom:6 }}>Root cause: {b.root_cause}</div>
+                          <div style={{ display:"flex", gap:12, marginBottom: isOpen ? 10 : 0 }}>
+                            {b.hours_down > 0 && <span style={{ color:B.yellowLight, fontSize:11 }}>⏱ {b.hours_down}hrs down</span>}
+                            <span style={{ color:B.redLight, fontSize:11 }}>₱{Number(b.cost).toLocaleString()}</span>
+                            {b.location && <span style={{ color:B.muted, fontSize:11 }}>{b.location}</span>}
+                          </div>
+
+                          {/* Resolve action */}
+                          {isOpen && !isResolving && (
+                            <button onClick={() => {
+                              setResolvingId(b.id);
+                              setResolveResolvedAt(new Date().toISOString().slice(0,16));
+                            }} style={{
+                              width:"100%", padding:"7px 0", borderRadius:8, border:"none",
+                              background:B.blue, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer",
+                            }}>✓ Mark as Resolved</button>
+                          )}
+
+                          {/* Inline resolve form */}
+                          {isOpen && isResolving && (
+                            <div style={{ padding:10, background:B.navyLight, borderRadius:8 }}>
+                              <div style={{ color:B.muted, fontSize:11, fontWeight:700, marginBottom:8 }}>
+                                RESOLVE — Set time vehicle returned to service
+                              </div>
+                              <div style={{ marginBottom:8 }}>
+                                <div style={{ color:B.muted, fontSize:10, marginBottom:3 }}>Resolved At</div>
+                                <input type="datetime-local" value={resolveResolvedAt}
+                                  onChange={e => setResolveResolvedAt(e.target.value)}
+                                  style={{ width:"100%", background:B.navyMid, border:`1px solid ${B.navyBorder}`,
+                                    borderRadius:6, padding:"7px 10px", color:B.white, fontSize:12,
+                                    outline:"none", boxSizing:"border-box" }} />
+                              </div>
+                              <div style={{ color:B.muted, fontSize:10, marginBottom:8 }}>
+                                Down hours will be auto-computed from breakdown start → resolved time.
+                              </div>
+                              <div style={{ display:"flex", gap:8 }}>
+                                <button onClick={() => { setResolvingId(null); setResolveResolvedAt(""); }} style={{
+                                  flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.navyBorder}`,
+                                  background:"transparent", color:B.muted, fontSize:12, fontWeight:700, cursor:"pointer",
+                                }}>Cancel</button>
+                                <button onClick={() => resolveBreakdown(b.id)} style={{
+                                  flex:2, padding:"8px 0", borderRadius:8, border:"none",
+                                  background:B.blue, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer",
+                                }}>Save & Resolve</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div style={{ color:B.offWhite, fontSize:12, marginBottom:4 }}>{b.issue}</div>
-                        <div style={{ color:B.muted, fontSize:11, marginBottom:6 }}>Root cause: {b.root_cause}</div>
-                        <div style={{ display:"flex", gap:12 }}>
-                          <span style={{ color:B.yellowLight, fontSize:11 }}>⏱ {b.hours_down}hrs</span>
-                          <span style={{ color:B.redLight, fontSize:11 }}>₱{Number(b.cost).toLocaleString()}</span>
-                          {b.location && <span style={{ color:B.muted, fontSize:11 }}>{b.location}</span>}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             )}
           </div>
         )}
+
+        {/* LOG BREAKDOWN MODAL */}
+        {showBdModal && (() => {
+          const inputStyle = {
+            width:"100%", background:B.navyLight, border:`1px solid ${B.navyBorder}`,
+            borderRadius:8, padding:"9px 12px", color:B.white, fontSize:13,
+            outline:"none", boxSizing:"border-box",
+          };
+          return (
+            <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:100,
+              overflowY:"auto", padding:"20px 16px" }}>
+              <div style={{ background:B.navyMid, borderRadius:16, padding:20, maxWidth:520, margin:"0 auto" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                  <h3 style={{ color:B.white, fontSize:16, fontWeight:700 }}>Log Breakdown Incident</h3>
+                  <button onClick={() => setShowBdModal(false)}
+                    style={{ background:"none", border:"none", color:B.muted, fontSize:20, cursor:"pointer" }}>✕</button>
+                </div>
+
+                {bdModalError && (
+                  <div style={{ background:"#3a0e0a", border:"1px solid #7f1d1d", borderRadius:8,
+                    color:"#fca5a5", fontSize:12, padding:"8px 12px", marginBottom:12 }}>{bdModalError}</div>
+                )}
+
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                  {/* Vehicle */}
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Vehicle *</div>
+                    <select value={bdForm.vehicle_id}
+                      onChange={e => setBdForm(p => ({ ...p, vehicle_id: e.target.value }))}
+                      style={inputStyle}>
+                      <option value="">Select vehicle…</option>
+                      {bdModalVehicles.map(v => (
+                        <option key={v.id} value={v.id}>
+                          {v.plate} — {v.make} {v.model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Date */}
+                  <div>
+                    <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Breakdown Date *</div>
+                    <input type="date" value={bdForm.date}
+                      onChange={e => setBdForm(p => ({ ...p, date: e.target.value }))}
+                      style={inputStyle} />
+                  </div>
+
+                  {/* Started At */}
+                  <div>
+                    <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Time Vehicle Went Down</div>
+                    <input type="datetime-local" value={bdForm.started_at}
+                      onChange={e => setBdForm(p => ({ ...p, started_at: e.target.value }))}
+                      style={inputStyle} />
+                  </div>
+
+                  {/* Root Cause */}
+                  <div>
+                    <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Root Cause</div>
+                    <select value={bdForm.breakdown_root_cause_id}
+                      onChange={e => setBdForm(p => ({ ...p, breakdown_root_cause_id: e.target.value }))}
+                      style={inputStyle}>
+                      <option value="">Select cause…</option>
+                      {bdModalCauses.map(c => (
+                        <option key={c.id} value={c.id}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Cost */}
+                  <div>
+                    <div style={{ color: bdModalError && !bdForm.cost ? "#fca5a5" : B.muted, fontSize:11, marginBottom:4 }}>
+                      Repair Cost (₱) *
+                    </div>
+                    <input type="number" value={bdForm.cost} min="0"
+                      onChange={e => setBdForm(p => ({ ...p, cost: e.target.value }))}
+                      style={{ ...inputStyle, border: `1px solid ${bdModalError && !bdForm.cost ? "#ef4444" : B.navyBorder}` }} />
+                  </div>
+
+                  {/* Issue */}
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <div style={{ color: bdModalError && !bdForm.issue?.trim() ? "#fca5a5" : B.muted, fontSize:11, marginBottom:4 }}>
+                      Issue Description *
+                    </div>
+                    <textarea value={bdForm.issue} rows={3}
+                      placeholder="Describe the breakdown issue…"
+                      onChange={e => setBdForm(p => ({ ...p, issue: e.target.value }))}
+                      style={{ ...inputStyle, resize:"none",
+                        border: `1px solid ${bdModalError && !bdForm.issue?.trim() ? "#ef4444" : B.navyBorder}` }} />
+                  </div>
+                </div>
+
+                <div style={{ display:"flex", gap:10, marginTop:16 }}>
+                  <button onClick={() => setShowBdModal(false)} style={{
+                    flex:1, padding:"11px 0", borderRadius:10, border:`1px solid ${B.navyBorder}`,
+                    background:"transparent", color:B.white, fontWeight:700, cursor:"pointer",
+                  }}>Cancel</button>
+                  <button onClick={saveBdModal} disabled={bdModalSaving} style={{
+                    flex:2, padding:"11px 0", borderRadius:10, border:"none",
+                    background:B.blue, color:"#fff", fontWeight:700, fontSize:14,
+                    cursor: bdModalSaving ? "not-allowed" : "pointer", opacity: bdModalSaving ? 0.7 : 1,
+                  }}>{bdModalSaving ? "Saving…" : "Log Breakdown"}</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* COST ANALYSIS */}
         {tab === "costs" && (

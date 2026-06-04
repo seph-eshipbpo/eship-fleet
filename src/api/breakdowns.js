@@ -5,6 +5,10 @@ export function getReportBreakdowns(year) {
   return api.get(`/api/reports/breakdowns${query}`);
 }
 
+export function listBreakdownRootCauses() {
+  return api.get("/api/breakdown-root-causes?per_page=100");
+}
+
 export function listBreakdowns(params = {}) {
   const q = new URLSearchParams(params).toString();
   return api.get(`/api/breakdowns${q ? `?${q}` : ""}`);
