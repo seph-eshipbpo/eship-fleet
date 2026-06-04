@@ -24,6 +24,9 @@ async function request(method, path, body) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    if (res.status === 401 && getToken()) {
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
     const message = data?.message || "Something went wrong.";
     const errors  = data?.errors  || null;
     const err     = new Error(message);

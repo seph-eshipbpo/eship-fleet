@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import { login as apiLogin, logout as apiLogout } from "../api/auth";
 
 const AuthContext = createContext(null);
@@ -31,12 +31,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    try { await apiLogout(); } catch { /* token may already be invalid */ }
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);
+    try { await apiLogout(); } catch { /* token may already be invalid */ }
   }, []);
+
+  useEffect(() => {
+    const handleExpired = () => signOut();
+    window.addEventListener("auth:expired", handleExpired);
+    return () => window.removeEventListener("auth:expired", handleExpired);
+  }, [signOut]);
 
   return (
     <AuthContext.Provider value={{ token, user, isAuthenticated: !!token, signIn, signOut }}>
