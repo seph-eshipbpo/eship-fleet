@@ -24,3 +24,11 @@ export function resetPassword(token, email, password, password_confirmation) {
     password_confirmation,
   });
 }
+
+export function changePassword(current_password, new_password, new_password_confirmation) {
+  return api.post("/api/auth/change-password", {
+    current_password,
+    new_password,
+    new_password_confirmation,
+  });
+}

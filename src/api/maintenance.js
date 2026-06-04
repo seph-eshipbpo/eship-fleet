@@ -28,3 +28,12 @@ export function approveServiceLog(id, data = {}) {
 export function updateServiceLogHours(id, hours_down) {
   return api.put(`/api/pm-service-logs/${id}/hours`, { hours_down });
 }
+
+export function fetchInspectionFlags(params = {}) {
+  const q = new URLSearchParams(params).toString();
+  return api.get(`/api/inspection-flags${q ? `?${q}` : ""}`);
+}
+
+export function resolveInspectionFlag(id, resolution_notes = "") {
+  return api.post(`/api/inspection-flags/${id}/resolve`, { resolution_notes });
+}

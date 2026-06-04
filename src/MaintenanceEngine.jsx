@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useB } from "./contexts/ThemeContext";
-import { fetchPmSchedule, fetchServiceLogs, logService, approveServiceLog, updateServiceLogHours } from "./api/maintenance";
+import { fetchPmSchedule, fetchServiceLogs, logService, approveServiceLog, updateServiceLogHours, fetchInspectionFlags, resolveInspectionFlag } from "./api/maintenance";
 
 // ── Log Service modal ────────────────────────────────────────────────────────
 const EMPTY_PART = () => ({ name: "", qty: 1, unit_cost: 0 });
@@ -158,6 +158,10 @@ export default function MaintenanceEngine() {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [loadingLogs,     setLoadingLogs]     = useState(false);
   const [tab,             setTab]             = useState("schedule");
+  const [inspFlags,       setInspFlags]       = useState([]);
+  const [loadingFlags,    setLoadingFlags]    = useState(false);
+  const [resolvingFlag,   setResolvingFlag]   = useState(null);
+  const [resolveNote,     setResolveNote]     = useState("");
   const [filterVehicle,   setFilterVehicle]   = useState("all");
   const [logTarget,        setLogTarget]        = useState(null);
   const [submitting,       setSubmitting]       = useState(false);
@@ -192,6 +196,23 @@ export default function MaintenanceEngine() {
   }, []);
 
   useEffect(() => { loadSchedule(); loadLogs(); }, [loadSchedule, loadLogs]);
+
+  useEffect(() => {
+    if (tab !== "flags" || inspFlags.length > 0) return;
+    setLoadingFlags(true);
+    fetchInspectionFlags({ per_page: 100 })
+      .then(res => setInspFlags(res.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingFlags(false));
+  }, [tab]);
+
+  function refreshFlags() {
+    setLoadingFlags(true);
+    fetchInspectionFlags({ per_page: 100 })
+      .then(res => setInspFlags(res.data ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingFlags(false));
+  }
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
@@ -283,11 +304,16 @@ export default function MaintenanceEngine() {
 
         {/* Tab bar */}
         <div style={{ display: "flex", borderBottom: `1px solid ${B.navyBorder}` }}>
-          {[["schedule", "PM Schedule"], ["history", "Service Log"]].map(([k, label]) => (
+          {[
+            ["schedule", "PM Schedule"],
+            ["history",  "Service Log"],
+            ["flags",    `Insp. Flags${inspFlags.length > 0 ? ` (${inspFlags.length})` : ""}`],
+          ].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} style={{
               padding: "8px 16px", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700,
-              background: "transparent", color: tab === k ? B.white : B.muted,
-              borderBottom: `2px solid ${tab === k ? B.blue : "transparent"}`,
+              background: "transparent",
+              color: tab === k ? B.white : (k === "flags" && inspFlags.length > 0 ? B.redLight : B.muted),
+              borderBottom: `2px solid ${tab === k ? (k === "flags" && inspFlags.length > 0 ? B.redLight : B.blue) : "transparent"}`,
             }}>{label}</button>
           ))}
         </div>
@@ -637,6 +663,91 @@ export default function MaintenanceEngine() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+        {/* ── Inspection Flags ── */}
+        {tab === "flags" && (
+          <div>
+            {loadingFlags ? (
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {Array.from({length:4}).map((_,i) => {
+                  const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+                  return (
+                    <div key={i} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                      <div style={{ ...sh, height:13, width:"30%", marginBottom:8 }} />
+                      <div style={{ ...sh, height:11, width:"70%", marginBottom:6 }} />
+                      <div style={{ ...sh, height:11, width:"50%" }} />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : inspFlags.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"32px 0" }}>
+                <div style={{ color:B.greenLight, fontSize:24, marginBottom:8 }}>✓</div>
+                <div style={{ color:B.greenLight, fontSize:14, fontWeight:700 }}>No open inspection flags</div>
+                <div style={{ color:B.muted, fontSize:12, marginTop:4 }}>All reported issues from pre/post-trip inspections have been resolved.</div>
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                {inspFlags.map(flag => (
+                  <div key={flag.id} style={{ background:B.navyMid, borderRadius:12, padding:14,
+                    border:`1px solid ${B.statusRedBorder ?? "#7f1d1d"}` }}>
+
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ color:B.white, fontWeight:700, fontSize:14 }}>{flag.vehicle?.plate}</span>
+                        <span style={{ fontSize:10, fontWeight:700, padding:"2px 6px", borderRadius:10,
+                          background:"#3a0e0a", border:"1px solid #7f1d1d", color:"#fca5a5" }}>
+                          {flag.inspection_type === "pre" ? "Pre-Trip" : "Post-Trip"}
+                        </span>
+                      </div>
+                      <span style={{ color:B.muted, fontSize:11 }}>{flag.inspection_date}</span>
+                    </div>
+
+                    <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>
+                      {flag.section_label} › <span style={{ color:B.offWhite }}>{flag.item_label}</span>
+                    </div>
+                    <div style={{ color:B.redLight, fontSize:12, marginBottom: resolvingFlag === flag.id ? 10 : 0 }}>
+                      ⚑ {flag.issue}
+                    </div>
+                    {flag.vehicle?.location && (
+                      <div style={{ color:B.muted, fontSize:11, marginBottom: resolvingFlag === flag.id ? 8 : 0 }}>{flag.vehicle.location}</div>
+                    )}
+
+                    {/* Resolve form */}
+                    {resolvingFlag === flag.id ? (
+                      <div style={{ marginTop:8 }}>
+                        <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>Resolution notes (optional)</div>
+                        <textarea value={resolveNote} onChange={e => setResolveNote(e.target.value)}
+                          rows={2} placeholder="What was done to fix this issue?"
+                          style={{ width:"100%", borderRadius:6, border:`1px solid ${B.navyBorder}`,
+                            background:B.navyLight, color:B.white, padding:"7px 10px", fontSize:12,
+                            outline:"none", resize:"none", boxSizing:"border-box", marginBottom:8 }} />
+                        <div style={{ display:"flex", gap:8 }}>
+                          <button onClick={() => { setResolvingFlag(null); setResolveNote(""); }} style={{
+                            flex:1, padding:"7px 0", borderRadius:8, border:`1px solid ${B.navyBorder}`,
+                            background:"transparent", color:B.muted, fontSize:12, fontWeight:700, cursor:"pointer",
+                          }}>Cancel</button>
+                          <button onClick={async () => {
+                            await resolveInspectionFlag(flag.id, resolveNote);
+                            setResolvingFlag(null); setResolveNote("");
+                            refreshFlags();
+                          }} style={{
+                            flex:2, padding:"7px 0", borderRadius:8, border:"none",
+                            background:B.blue, color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer",
+                          }}>✓ Mark Resolved</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setResolvingFlag(flag.id); setResolveNote(""); }} style={{
+                        marginTop:8, padding:"6px 14px", borderRadius:8, border:"none",
+                        background:B.blue, color:"#fff", fontSize:11, fontWeight:700, cursor:"pointer",
+                      }}>✓ Resolve Issue</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
