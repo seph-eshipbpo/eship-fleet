@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { useB } from "./contexts/ThemeContext";
+import { getReportOverview, getReportCosts, getReportLocations } from "./api/reports";
+import { getReportBreakdowns } from "./api/breakdowns";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -119,13 +121,69 @@ const TABS = [["overview","Overview"],["breakdowns","Breakdowns"],["costs","Cost
 export default function ManagementView() {
   const B = useB();
   const [tab, setTab] = useState("overview");
+  const [overview, setOverview]               = useState(null);
+  const [loadingOverview, setLoadingOverview] = useState(true);
+  const [bdReport, setBdReport]               = useState(null);
+  const [loadingBd, setLoadingBd]             = useState(false);
+  const [costReport, setCostReport]           = useState(null);
+  const [loadingCost, setLoadingCost]         = useState(false);
+  const [locReport, setLocReport]             = useState(null);
+  const [loadingLoc, setLoadingLoc]           = useState(false);
 
-  const totalTrips = TRIP_DATA.reduce((a,d)=>a+d.trips,0);
-  const totalKm = TRIP_DATA.reduce((a,d)=>a+d.km,0);
-  const totalBreakdownCost = BREAKDOWNS.reduce((a,b)=>a+b.cost,0);
-  const totalDownHours = BREAKDOWNS.reduce((a,b)=>a+b.hoursDown,0);
-  const ytdFuel = COST_DATA.reduce((a,d)=>a+d.fuel,0);
-  const ytdMaint = COST_DATA.reduce((a,d)=>a+d.maintenance,0);
+  useEffect(() => {
+    getReportOverview()
+      .then(res => setOverview(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingOverview(false));
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "breakdowns" || bdReport) return;
+    setLoadingBd(true);
+    getReportBreakdowns()
+      .then(res => setBdReport(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingBd(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "costs" || costReport) return;
+    setLoadingCost(true);
+    getReportCosts()
+      .then(res => setCostReport(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingCost(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "locations" || locReport) return;
+    setLoadingLoc(true);
+    getReportLocations()
+      .then(res => setLocReport(res.data))
+      .catch(() => {})
+      .finally(() => setLoadingLoc(false));
+  }, [tab]);
+
+  // Overview tab — driven by API; show zeros while loading
+  const tripChartData   = overview?.monthly_trips  ?? TRIP_DATA;
+  const totalTrips      = overview?.total_trips    ?? 0;
+  const totalKm         = overview?.total_km       ?? 0;
+  const tripTargetPct   = overview?.trip_target_pct   ?? 0;
+  const fleetUptimePct  = overview?.fleet_uptime_pct  ?? 0;
+  const pmCompliancePct = overview?.pm_compliance_pct ?? 0;
+  const maintCost       = overview?.maintenance_cost  ?? 0;
+
+  // Breakdowns tab — from API
+  const bdList       = bdReport?.breakdowns   ?? [];
+  const rootCauses   = bdReport?.root_causes  ?? ROOT_CAUSES;
+  const bdTotalInc   = bdReport?.total_incidents  ?? BREAKDOWNS.length;
+  const bdTotalHours = bdReport?.total_down_hours ?? BREAKDOWNS.reduce((a,b)=>a+b.hoursDown,0);
+  const bdTotalCost  = bdReport?.total_cost       ?? BREAKDOWNS.reduce((a,b)=>a+b.cost,0);
+
+  // Cost Analysis tab — from API
+  const costData = costReport?.monthly ?? COST_DATA;
+  const ytdFuel  = costReport?.ytd_fuel        ?? COST_DATA.reduce((a,d)=>a+d.fuel,0);
+  const ytdMaint = costReport?.ytd_maintenance ?? COST_DATA.reduce((a,d)=>a+d.maintenance,0);
 
   return (
     <div style={{ minHeight:"unset", background:B.navy }}>
@@ -145,27 +203,48 @@ export default function ManagementView() {
 
       <div style={{ padding:16, overflowY:"auto" }}>
         {/* OVERVIEW */}
-        {tab === "overview" && (
+        {tab === "overview" && loadingOverview && (() => {
+          const sh = { background:`linear-gradient(90deg,${B.navyMid} 25%,${B.navyBorder} 50%,${B.navyMid} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:8 };
+          return (
+            <div>
+              <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+              <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                {[1,2].map(i=><div key={i} style={{ flex:1, background:B.navyMid, borderRadius:12, padding:"14px 16px", border:`1px solid ${B.navyBorder}` }}><div style={{ ...sh, height:28, width:"50%", marginBottom:8 }} /><div style={{ ...sh, height:12, width:"60%" }} /></div>)}
+              </div>
+              <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                {[1,2].map(i=><div key={i} style={{ flex:1, background:B.navyMid, borderRadius:12, padding:"14px 16px", border:`1px solid ${B.navyBorder}` }}><div style={{ ...sh, height:28, width:"40%", marginBottom:8 }} /><div style={{ ...sh, height:12, width:"55%" }} /></div>)}
+              </div>
+              <div style={{ display:"flex", gap:10, justifyContent:"center", marginBottom:16 }}>
+                {[1,2,3].map(i=><div key={i} style={{ ...sh, height:80, width:120 }} />)}
+              </div>
+              <div style={{ background:B.navyMid, borderRadius:14, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                <div style={{ ...sh, height:12, width:"40%", marginBottom:14 }} />
+                <div style={{ ...sh, height:180, width:"100%", borderRadius:10 }} />
+              </div>
+            </div>
+          );
+        })()}
+        {tab === "overview" && !loadingOverview && (
           <div>
             <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
-              <KpiCard label="Total Trips" value={totalTrips.toLocaleString()} sub="YTD 2026" color={B.blueLight} />
+              <KpiCard label="Total Trips" value={totalTrips.toLocaleString()} sub={`YTD ${new Date().getFullYear()}`} color={B.blueLight} />
               <KpiCard label="Total KM" value={(totalKm/1000).toFixed(1)+"k"} sub="YTD" color={B.offWhite} />
             </div>
             <div style={{ display:"flex", gap:10, marginBottom:14, flexWrap:"wrap" }}>
-              <KpiCard label="Breakdowns" value={BREAKDOWNS.length} sub={`${totalDownHours}hrs total`} color={B.redLight} />
-              <KpiCard label="Maint. Cost" value={`₱${(ytdMaint/1000).toFixed(0)}k`} sub="YTD" color={B.yellowLight} />
+              <KpiCard label="Breakdowns" value={bdTotalInc} sub={`${bdTotalHours}hrs total`} color={B.redLight} />
+              <KpiCard label="Maint. Cost" value={`₱${(maintCost/1000).toFixed(0)}k`} sub="YTD" color={B.yellowLight} />
             </div>
 
             <div style={{ display:"flex", gap:10, justifyContent:"center", marginBottom:16, flexWrap:"wrap" }}>
-              <GoalGauge pct={Math.round((totalTrips/(150*12))*100)} label="Trip Target" />
-              <GoalGauge pct={Math.round(((20-BREAKDOWNS.filter(b=>b.status==="open").length)/20)*100)} label="Fleet Uptime" />
-              <GoalGauge pct={88} label="PM Compliance" />
+              <GoalGauge pct={tripTargetPct}   label="Trip Target" />
+              <GoalGauge pct={fleetUptimePct}  label="Fleet Uptime" />
+              <GoalGauge pct={pmCompliancePct} label="PM Compliance" />
             </div>
 
             <div style={{ background:B.navyMid, borderRadius:14, padding:14, border:`1px solid ${B.navyBorder}` }}>
               <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>MONTHLY TRIPS VS TARGET</div>
               <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={TRIP_DATA}>
+                <LineChart data={tripChartData}>
                   <CartesianGrid stroke={B.navyBorder} strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill:B.muted, fontSize:10 }} />
                   <YAxis tick={{ fill:B.muted, fontSize:10 }} />
@@ -181,91 +260,143 @@ export default function ManagementView() {
         {/* BREAKDOWNS */}
         {tab === "breakdowns" && (
           <div>
-            <div style={{ display:"flex", gap:10, marginBottom:14 }}>
-              <KpiCard label="Total Incidents" value={BREAKDOWNS.length} color={B.redLight} />
-              <KpiCard label="Total Down Hours" value={totalDownHours} color={B.yellowLight} />
-              <KpiCard label="Total Cost" value={`₱${(totalBreakdownCost/1000).toFixed(0)}k`} color={B.offWhite} />
-            </div>
-
-            <div style={{ background:B.navyMid, borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${B.navyBorder}` }}>
-              <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>ROOT CAUSES</div>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <PieChart width={120} height={120}>
-                  <Pie data={ROOT_CAUSES} cx={56} cy={56} innerRadius={36} outerRadius={56} dataKey="value">
-                    {ROOT_CAUSES.map((e,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]} />)}
-                  </Pie>
-                </PieChart>
-                <div style={{ flex:1 }}>
-                  {ROOT_CAUSES.map((rc,i)=>(
-                    <div key={i} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
-                      <span style={{ width:8, height:8, borderRadius:"50%", background:PIE_COLORS[i%PIE_COLORS.length], display:"inline-block" }} />
-                      <span style={{ color:B.offWhite, fontSize:11, flex:1 }}>{rc.name}</span>
-                      <span style={{ color:B.muted, fontSize:11 }}>{rc.value}</span>
+            {loadingBd ? (
+              (() => {
+                const sh = { background:`linear-gradient(90deg,${B.navyMid} 25%,${B.navyBorder} 50%,${B.navyMid} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:8 };
+                return (
+                  <div>
+                    <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+                    <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                      {[1,2,3].map(i=><div key={i} style={{ flex:1, background:B.navyMid, borderRadius:12, padding:"14px 16px", border:`1px solid ${B.navyBorder}` }}><div style={{ ...sh, height:28, width:"50%", marginBottom:8 }} /><div style={{ ...sh, height:12, width:"70%" }} /></div>)}
                     </div>
-                  ))}
+                    <div style={{ background:B.navyMid, borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${B.navyBorder}`, height:140 }}><div style={{ ...sh, height:12, width:"30%", marginBottom:14 }} /><div style={{ ...sh, height:100, width:"100%", borderRadius:10 }} /></div>
+                    {[1,2,3].map(i=><div key={i} style={{ background:B.navyMid, borderRadius:12, padding:14, marginBottom:10, border:`1px solid ${B.navyBorder}` }}><div style={{ ...sh, height:13, width:"40%", marginBottom:8 }} /><div style={{ ...sh, height:11, width:"70%", marginBottom:6 }} /><div style={{ ...sh, height:11, width:"50%" }} /></div>)}
+                  </div>
+                );
+              })()
+            ) : (
+              <div>
+                <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                  <KpiCard label="Total Incidents" value={bdTotalInc} color={B.redLight} />
+                  <KpiCard label="Total Down Hours" value={bdTotalHours} color={B.yellowLight} />
+                  <KpiCard label="Total Cost" value={`₱${(bdTotalCost/1000).toFixed(0)}k`} color={B.offWhite} />
                 </div>
+
+                {rootCauses.length > 0 && (
+                  <div style={{ background:B.navyMid, borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${B.navyBorder}` }}>
+                    <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>ROOT CAUSES</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                      <PieChart width={120} height={120}>
+                        <Pie data={rootCauses} cx={56} cy={56} innerRadius={36} outerRadius={56} dataKey="value">
+                          {rootCauses.map((e,i)=><Cell key={i} fill={PIE_COLORS[i%PIE_COLORS.length]} />)}
+                        </Pie>
+                      </PieChart>
+                      <div style={{ flex:1 }}>
+                        {rootCauses.map((rc,i)=>(
+                          <div key={i} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:5 }}>
+                            <span style={{ width:8, height:8, borderRadius:"50%", background:PIE_COLORS[i%PIE_COLORS.length], display:"inline-block" }} />
+                            <span style={{ color:B.offWhite, fontSize:11, flex:1 }}>{rc.name}</span>
+                            <span style={{ color:B.muted, fontSize:11 }}>{rc.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {bdList.length === 0 ? (
+                  <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>No breakdown incidents recorded for this year.</p>
+                ) : (
+                  <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                    {bdList.map(b=>(
+                      <div key={b.id} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+                          <div>
+                            <span style={{ color:B.muted, fontSize:10, marginRight:8 }}>{b.ref}</span>
+                            <span style={{ color:B.white, fontWeight:700, fontSize:14 }}>{b.plate}</span>
+                            {b.status === "open" && (
+                              <span style={{ marginLeft:8, fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:10,
+                                background:"#3a0e0a", border:"1px solid #7f1d1d", color:"#fca5a5" }}>OPEN</span>
+                            )}
+                          </div>
+                          <span style={{ color:B.muted, fontSize:11 }}>{b.date}</span>
+                        </div>
+                        <div style={{ color:B.offWhite, fontSize:12, marginBottom:4 }}>{b.issue}</div>
+                        <div style={{ color:B.muted, fontSize:11, marginBottom:6 }}>Root cause: {b.root_cause}</div>
+                        <div style={{ display:"flex", gap:12 }}>
+                          <span style={{ color:B.yellowLight, fontSize:11 }}>⏱ {b.hours_down}hrs</span>
+                          <span style={{ color:B.redLight, fontSize:11 }}>₱{Number(b.cost).toLocaleString()}</span>
+                          {b.location && <span style={{ color:B.muted, fontSize:11 }}>{b.location}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {BREAKDOWNS.map(b=>(
-                <div key={b.id} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-                    <div>
-                      <span style={{ color:B.muted, fontSize:10, marginRight:8 }}>{b.id}</span>
-                      <span style={{ color:B.white, fontWeight:700, fontSize:14 }}>{b.plate}</span>
-                    </div>
-                    <span style={{ color:B.muted, fontSize:11 }}>{b.date}</span>
-                  </div>
-                  <div style={{ color:B.offWhite, fontSize:12, marginBottom:4 }}>{b.issue}</div>
-                  <div style={{ color:B.muted, fontSize:11, marginBottom:6 }}>Root cause: {b.rootCause}</div>
-                  <div style={{ display:"flex", gap:12 }}>
-                    <span style={{ color:B.yellowLight, fontSize:11 }}>⏱ {b.hoursDown}hrs</span>
-                    <span style={{ color:B.redLight, fontSize:11 }}>₱{b.cost.toLocaleString()}</span>
-                    <span style={{ color:B.muted, fontSize:11 }}>{b.location}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
         )}
 
         {/* COST ANALYSIS */}
         {tab === "costs" && (
           <div>
-            <div style={{ display:"flex", gap:10, marginBottom:14 }}>
-              <KpiCard label="YTD Fuel" value={`₱${(ytdFuel/1000).toFixed(0)}k`} color={B.yellowLight} />
-              <KpiCard label="YTD Maintenance" value={`₱${(ytdMaint/1000).toFixed(0)}k`} color={B.redLight} />
-              <KpiCard label="YTD Total" value={`₱${((ytdFuel+ytdMaint)/1000).toFixed(0)}k`} color={B.offWhite} />
-            </div>
-
-            <div style={{ background:B.navyMid, borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${B.navyBorder}` }}>
-              <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>MONTHLY COSTS (₱)</div>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={COST_DATA}>
-                  <CartesianGrid stroke={B.navyBorder} strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fill:B.muted, fontSize:10 }} />
-                  <YAxis tick={{ fill:B.muted, fontSize:10 }} tickFormatter={v=>`${(v/1000).toFixed(0)}k`} />
-                  <Tooltip contentStyle={{ background:B.navyMid, border:`1px solid ${B.navyBorder}`, borderRadius:8, color:B.white }}
-                    formatter={v=>`₱${v.toLocaleString()}`} />
-                  <Bar dataKey="fuel" fill={B.yellowLight} name="Fuel" stackId="a" />
-                  <Bar dataKey="maintenance" fill={B.red} name="Maintenance" stackId="a" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div style={{ background:B.navyMid, borderRadius:14, padding:14, border:`1px solid ${B.navyBorder}` }}>
-              <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>MONTHLY BREAKDOWN</div>
-              {COST_DATA.map((d,i)=>(
-                <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0",
-                  borderBottom:`1px solid ${B.navyBorder}`, alignItems:"center" }}>
-                  <span style={{ color:B.muted, fontSize:12, width:36 }}>{d.month}</span>
-                  <span style={{ color:B.yellowLight, fontSize:12 }}>F: ₱{(d.fuel/1000).toFixed(0)}k</span>
-                  <span style={{ color:B.redLight, fontSize:12 }}>M: ₱{(d.maintenance/1000).toFixed(0)}k</span>
-                  <span style={{ color:B.white, fontSize:12, fontWeight:700 }}>₱{(d.total/1000).toFixed(0)}k</span>
+            {loadingCost ? (
+              (() => {
+                const sh = { background:`linear-gradient(90deg,${B.navyMid} 25%,${B.navyBorder} 50%,${B.navyMid} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:8 };
+                return (
+                  <div>
+                    <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+                    <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                      {[1,2,3].map(i=><div key={i} style={{ flex:1, background:B.navyMid, borderRadius:12, padding:"14px 16px", border:`1px solid ${B.navyBorder}` }}><div style={{ ...sh, height:28, width:"55%", marginBottom:8 }} /><div style={{ ...sh, height:12, width:"65%" }} /></div>)}
+                    </div>
+                    <div style={{ background:B.navyMid, borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${B.navyBorder}` }}>
+                      <div style={{ ...sh, height:12, width:"35%", marginBottom:14 }} />
+                      <div style={{ ...sh, height:200, width:"100%", borderRadius:10 }} />
+                    </div>
+                    <div style={{ background:B.navyMid, borderRadius:14, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                      <div style={{ ...sh, height:12, width:"40%", marginBottom:14 }} />
+                      {Array.from({ length: 6 }).map((_,i)=><div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${B.navyBorder}` }}><div style={{ ...sh, height:11, width:30 }} /><div style={{ ...sh, height:11, width:50 }} /><div style={{ ...sh, height:11, width:50 }} /><div style={{ ...sh, height:11, width:40 }} /></div>)}
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div>
+                <div style={{ display:"flex", gap:10, marginBottom:14 }}>
+                  <KpiCard label="YTD Fuel" value={`₱${(ytdFuel/1000).toFixed(0)}k`} color={B.yellowLight} />
+                  <KpiCard label="YTD Maintenance" value={`₱${(ytdMaint/1000).toFixed(0)}k`} color={B.redLight} />
+                  <KpiCard label="YTD Total" value={`₱${((ytdFuel+ytdMaint)/1000).toFixed(0)}k`} color={B.offWhite} />
                 </div>
-              ))}
-            </div>
+
+                <div style={{ background:B.navyMid, borderRadius:14, padding:14, marginBottom:14, border:`1px solid ${B.navyBorder}` }}>
+                  <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>MONTHLY COSTS (₱)</div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={costData}>
+                      <CartesianGrid stroke={B.navyBorder} strokeDasharray="3 3" />
+                      <XAxis dataKey="month" tick={{ fill:B.muted, fontSize:10 }} />
+                      <YAxis tick={{ fill:B.muted, fontSize:10 }} tickFormatter={v=>`${(v/1000).toFixed(0)}k`} />
+                      <Tooltip contentStyle={{ background:B.navyMid, border:`1px solid ${B.navyBorder}`, borderRadius:8, color:B.white }}
+                        formatter={v=>`₱${v.toLocaleString()}`} />
+                      <Bar dataKey="fuel" fill={B.yellowLight} name="Fuel" stackId="a" />
+                      <Bar dataKey="maintenance" fill={B.red} name="Maintenance" stackId="a" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div style={{ background:B.navyMid, borderRadius:14, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                  <div style={{ color:B.muted, fontSize:11, fontWeight:700, letterSpacing:1, marginBottom:10 }}>MONTHLY BREAKDOWN</div>
+                  {costData.map((d,i)=>(
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0",
+                      borderBottom:`1px solid ${B.navyBorder}`, alignItems:"center" }}>
+                      <span style={{ color:B.muted, fontSize:12, width:36 }}>{d.month}</span>
+                      <span style={{ color:B.yellowLight, fontSize:12 }}>F: ₱{(d.fuel/1000).toFixed(0)}k</span>
+                      <span style={{ color:B.redLight, fontSize:12 }}>M: ₱{(d.maintenance/1000).toFixed(0)}k</span>
+                      <span style={{ color:B.white, fontSize:12, fontWeight:700 }}>₱{(d.total/1000).toFixed(0)}k</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -273,7 +404,31 @@ export default function ManagementView() {
         {tab === "locations" && (
           <div>
             <div style={{ color:B.muted, fontSize:12, marginBottom:14 }}>Fleet distribution by hub location</div>
-            {LOCATIONS.map(loc=>(
+            {loadingLoc ? (
+              (() => {
+                const sh = { background:`linear-gradient(90deg,${B.navyMid} 25%,${B.navyBorder} 50%,${B.navyMid} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+                return (
+                  <div>
+                    <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} style={{ background:B.navyMid, borderRadius:12, padding:14, marginBottom:10, border:`1px solid ${B.navyBorder}` }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", marginBottom:10 }}>
+                          <div style={{ flex:1 }}>
+                            <div style={{ ...sh, height:14, width:"40%", marginBottom:7 }} />
+                            <div style={{ ...sh, height:10, width:"55%" }} />
+                          </div>
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
+                            <div style={{ ...sh, height:14, width:40 }} />
+                            <div style={{ ...sh, height:10, width:55 }} />
+                          </div>
+                        </div>
+                        <div style={{ ...sh, height:4, width:"100%", borderRadius:2 }} />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            ) : (locReport?.locations ?? LOCATIONS).map(loc => (
               <div key={loc.name} style={{ background:B.navyMid, borderRadius:12, padding:14,
                 marginBottom:10, border:`1px solid ${B.navyBorder}` }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
@@ -282,7 +437,7 @@ export default function ManagementView() {
                     <div style={{ color:B.muted, fontSize:11 }}>{loc.active}/{loc.vehicles} vehicles active</div>
                   </div>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ color:B.blueLight, fontSize:14, fontWeight:700 }}>{loc.trips}</div>
+                    <div style={{ color:B.blueLight, fontSize:14, fontWeight:700 }}>{loc.trips.toLocaleString()}</div>
                     <div style={{ color:B.muted, fontSize:10 }}>trips YTD</div>
                   </div>
                 </div>

@@ -3,6 +3,8 @@ import { useB } from "./contexts/ThemeContext";
 import { api } from "./api/client";
 import { list as listVehicles, create as createVehicle, update as updateVehicle } from "./api/vehicles";
 import { fetchInspections, fetchInspectionDetail } from "./api/inspections";
+import { logFuelPurchase, listFuelPurchases } from "./api/fuel";
+import Swal from "sweetalert2";
 
 // ── Map API vehicle response → local form format ──────────────────────────────
 function mapApiVehicle(v) {
@@ -22,6 +24,7 @@ function mapApiVehicle(v) {
     leadman:         v.leadman          ?? "",
     location:        v.location?.name   ?? "",
     condition:       v.condition?.label ?? "",
+    fuelType:        v.fuel_type        ?? "diesel",
     acquisitionDate: v.acquisition_date ?? "",
     amount:          v.acquisition_amount != null ? String(v.acquisition_amount) : "",
     terms:           v.acquisition_term?.label ?? "Cash",
@@ -53,6 +56,7 @@ function formToApiPayload(form, lk) {
     vehicle_type_id:      lk.typesByCode[form.type]             ?? null,
     location_id:          lk.locationsByName[form.location]     ?? null,
     vehicle_condition_id: lk.conditionsByLabel[form.condition]  ?? null,
+    fuel_type:            form.fuelType        || "diesel",
     driver:               form.driver         || null,
     leadman:              form.leadman        || null,
     initial_odometer:     form.initialOdometer  ? parseFloat(form.initialOdometer)  : 0,
@@ -82,7 +86,7 @@ const STATUS_STYLE = {
 const EMPTY_VEHICLE = {
   plate:"", make:"", model:"", type:"10W", year:"", color:"", owner:"eShip BPO",
   registeredOwner:"", chassis:"", motor:"", driver:"", leadman:"",
-  location:"Valenzuela", condition:"Good", operationalStatus:"running",
+  location:"Valenzuela", condition:"Good", fuelType:"diesel", operationalStatus:"running",
   initialOdometer:"0", acquisitionDate:"", amount:"",
   terms:"Cash", fleetCard:"", insurancePn:"", ltoRenewal:"", marineInsurance:"",
   remarks:"", status:"active", retiredDate:"", retiredReason:"",
@@ -111,6 +115,159 @@ function Toast({ msg, type }) {
   );
 }
 
+function SkeletonCard() {
+  const B = useB();
+  const shimmer = {
+    background: `linear-gradient(90deg, ${B.navyLight} 25%, ${B.navyBorder} 50%, ${B.navyLight} 75%)`,
+    backgroundSize: "200% 100%",
+    animation: "shimmer 1.4s infinite",
+    borderRadius: 6,
+  };
+  return (
+    <div style={{ background:B.navyMid, borderRadius:12, padding:"12px 14px", border:`1px solid ${B.navyBorder}` }}>
+      <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+      <div style={{ display:"flex", justifyContent:"space-between" }}>
+        <div style={{ flex:1 }}>
+          <div style={{ ...shimmer, height:14, width:"40%", marginBottom:8 }} />
+          <div style={{ ...shimmer, height:11, width:"60%", marginBottom:6 }} />
+          <div style={{ ...shimmer, height:11, width:"45%" }} />
+        </div>
+        <div style={{ width:80, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
+          <div style={{ ...shimmer, height:11, width:70 }} />
+          <div style={{ ...shimmer, height:11, width:50 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_FUEL = {
+  date: new Date().toISOString().slice(0, 10),
+  liters: "",
+  price_per_liter: "",
+  total_cost: "",
+  odometer: "",
+  fuel_type: "diesel",
+  station: "",
+  invoice_number: "",
+  remarks: "",
+};
+
+function FuelModal({ vehicle, onClose, onSaved }) {
+  const B = useB();
+  const [form, setForm]     = useState(EMPTY_FUEL);
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState(null);
+
+  const inputStyle = {
+    width:"100%", borderRadius:8, padding:"9px 12px", fontSize:13,
+    border:`1px solid ${B.navyBorder}`, background:B.navyLight, color:B.white, outline:"none",
+    boxSizing:"border-box",
+  };
+
+  function set(key, val) {
+    setForm(prev => {
+      const next = { ...prev, [key]: val };
+      // Auto-calculate total when liters or price changes
+      if (key === "liters" || key === "price_per_liter") {
+        const l = parseFloat(key === "liters" ? val : next.liters) || 0;
+        const p = parseFloat(key === "price_per_liter" ? val : next.price_per_liter) || 0;
+        next.total_cost = l > 0 && p > 0 ? (l * p).toFixed(2) : next.total_cost;
+      }
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    if (!form.liters || !form.price_per_liter || !form.total_cost) {
+      setError("Liters, price per liter, and total cost are required."); return;
+    }
+    setSaving(true); setError(null);
+    try {
+      await logFuelPurchase({
+        vehicle_id:      vehicle.id,
+        date:            form.date,
+        liters:          parseFloat(form.liters),
+        price_per_liter: parseFloat(form.price_per_liter),
+        total_cost:      parseFloat(form.total_cost),
+        odometer:        form.odometer ? parseFloat(form.odometer) : null,
+        station:         form.station || null,
+        invoice_number:  form.invoice_number || null,
+        remarks:         form.remarks || null,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message || "Failed to save fuel purchase.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const fields = [
+    { key:"date",            label:"Date",                 type:"date",    col:"half" },
+    { key:"liters",          label:"Liters",               type:"number",  col:"half" },
+    { key:"price_per_liter", label:"Price per Liter (₱)",  type:"number",  col:"half" },
+    { key:"total_cost",      label:"Total Cost (₱)",       type:"number",  col:"half" },
+    { key:"odometer",        label:"Odometer (km)",        type:"number",  col:"half" },
+    { key:"station",         label:"Station / Supplier",   type:"text",    col:"half" },
+    { key:"invoice_number",  label:"Invoice / Ref. No.",   type:"text",    col:"half" },
+    { key:"remarks",         label:"Remarks",              type:"textarea",col:"full" },
+  ];
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:100, overflowY:"auto", padding:"20px 16px" }}>
+      <div style={{ background:B.navyMid, borderRadius:16, padding:20, maxWidth:520, margin:"0 auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16 }}>
+          <div>
+            <h3 style={{ color:B.white, fontSize:16, fontWeight:700, marginBottom:2 }}>Log Fuel Purchase</h3>
+            <p style={{ color:B.muted, fontSize:12 }}>{vehicle.plate} — {vehicle.make} {vehicle.model}</p>
+            <p style={{ color:B.muted, fontSize:11, marginTop:2 }}>
+              Fuel type: <span style={{ color:B.offWhite, textTransform:"capitalize" }}>{vehicle.fuelType}</span>
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:B.muted, fontSize:20, cursor:"pointer", lineHeight:1 }}>✕</button>
+        </div>
+
+        {error && (
+          <div style={{ background:"#3a0e0a", border:"1px solid #7f1d1d", borderRadius:8, color:"#fca5a5",
+            fontSize:12, padding:"8px 12px", marginBottom:12 }}>{error}</div>
+        )}
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+          {fields.map(f => (
+            <div key={f.key} style={{ gridColumn: f.col === "full" ? "1/-1" : "auto" }}>
+              <div style={{ color:B.muted, fontSize:11, marginBottom:4 }}>{f.label}</div>
+              {f.type === "select" ? (
+                <select value={form[f.key]} onChange={e => set(f.key, e.target.value)} style={inputStyle}>
+                  {f.opts.map(o => <option key={o} value={o}>{o.charAt(0).toUpperCase() + o.slice(1)}</option>)}
+                </select>
+              ) : f.type === "textarea" ? (
+                <textarea value={form[f.key]} onChange={e => set(f.key, e.target.value)}
+                  rows={2} style={{ ...inputStyle, resize:"none" }} />
+              ) : (
+                <input type={f.type} value={form[f.key]} onChange={e => set(f.key, e.target.value)}
+                  style={inputStyle} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", gap:10, marginTop:16 }}>
+          <button onClick={onClose} style={{
+            flex:1, padding:"11px 0", borderRadius:10, border:`1px solid ${B.navyBorder}`,
+            background:"transparent", color:B.white, fontWeight:700, cursor:"pointer",
+          }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            flex:2, padding:"11px 0", borderRadius:10, border:"none",
+            background:B.blue, color:"#fff", fontWeight:700, fontSize:14,
+            cursor:saving?"not-allowed":"pointer", opacity:saving?0.7:1,
+          }}>{saving ? "Saving…" : "Save Fuel Purchase"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FleetRegistry() {
   const B = useB();
 
@@ -134,14 +291,20 @@ export default function FleetRegistry() {
   const [showAddForm,  setShowAddForm]  = useState(false);
   const [toast,        setToast]        = useState(null);
 
-  // ── Inspection history state
-  const [historyVehicle,   setHistoryVehicle]   = useState(null);
+  // ── Fuel modal state
+  const [fuelVehicle, setFuelVehicle] = useState(null);
+
+  // ── History page state
+  const [historyPage,      setHistoryPage]      = useState(null); // vehicle object
+  const [historyTab,       setHistoryTab]       = useState("inspections");
   const [historyItems,     setHistoryItems]     = useState([]);
   const [loadingHistory,   setLoadingHistory]   = useState(false);
   const [expandedId,       setExpandedId]       = useState(null);
   const [loadedItems,      setLoadedItems]      = useState({});
   const [loadingItemId,    setLoadingItemId]    = useState(null);
   const [activeTab,        setActiveTab]        = useState({});
+  const [fuelHistory,      setFuelHistory]      = useState([]);
+  const [loadingFuel,      setLoadingFuel]      = useState(false);
 
   function showToast(msg, type="success") {
     setToast({ msg, type });
@@ -203,6 +366,7 @@ export default function FleetRegistry() {
     { key:"leadman",        label:"Leadman" },
     { key:"location",          label:"Location",           type:"select", opts:locationOpts },
     { key:"condition",         label:"Condition",          type:"select", opts:conditionOpts },
+    { key:"fuelType",          label:"Fuel Type",          type:"select", opts:["diesel","gasoline","other"] },
     { key:"operationalStatus", label:"Operational Status", type:"select", opts:["running","maintenance","idle"] },
     { key:"initialOdometer",label:"Initial Odometer (km)", type:"number" },
     { key:"acquisitionDate",label:"Acquisition Date",      type:"date" },
@@ -275,6 +439,21 @@ export default function FleetRegistry() {
 
   async function handleRetire(v) {
     if (!lookups) return;
+
+    const result = await Swal.fire({
+      title: `Retire ${v.plate}?`,
+      html: `<span style="font-size:14px;color:#6b7280">${v.make} ${v.model} · ${v.type} · ${v.year}<br/>Driver: ${v.driver || "—"}</span>`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Yes, retire it",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      reverseButtons: true,
+    });
+
+    if (!result.isConfirmed) return;
+
     try {
       await updateVehicle(v.id, {
         ...formToApiPayload(v, lookups),
@@ -311,13 +490,28 @@ export default function FleetRegistry() {
   }
 
   function openHistory(v) {
-    setHistoryVehicle(v);
+    setHistoryPage(v);
+    setHistoryTab("inspections");
     setHistoryItems([]);
+    setExpandedId(null);
+    setLoadedItems({});
+    setActiveTab({});
+    setFuelHistory([]);
     setLoadingHistory(true);
     fetchInspections({ vehicle_plate: v.plate, per_page: 50 })
       .then(res => setHistoryItems(res.data ?? []))
       .catch(() => setHistoryItems([]))
       .finally(() => setLoadingHistory(false));
+  }
+
+  function openFuelTab() {
+    setHistoryTab("fuel");
+    if (fuelHistory.length > 0 || loadingFuel) return;
+    setLoadingFuel(true);
+    listFuelPurchases({ vehicle_id: historyPage.id, per_page: 100 })
+      .then(res => setFuelHistory(res.data ?? []))
+      .catch(() => setFuelHistory([]))
+      .finally(() => setLoadingFuel(false));
   }
 
   const inputStyle = {
@@ -328,6 +522,214 @@ export default function FleetRegistry() {
 
   const isFormOpen = editing !== null || showAddForm;
 
+  // ── History page (replaces list when active) ─────────────────────────────────
+  if (historyPage) {
+    const v = historyPage;
+    const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+    return (
+      <div style={{ minHeight:"unset", background:B.navy, padding:16 }}>
+        <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+
+        {/* Header */}
+        <div style={{ marginBottom:16 }}>
+          <button onClick={()=>setHistoryPage(null)} style={{
+            background:"none", border:"none", color:B.muted, fontSize:12, cursor:"pointer",
+            display:"flex", alignItems:"center", gap:6, marginBottom:10, padding:0,
+          }}>← Back to Registry</button>
+          <h2 style={{ color:B.white, fontSize:18, fontWeight:700, marginBottom:2 }}>{v.plate}</h2>
+          <p style={{ color:B.muted, fontSize:12 }}>{v.make} {v.model} · {v.type} · {v.year}</p>
+          {v.driver && <p style={{ color:B.muted, fontSize:12 }}>Driver: {v.driver}</p>}
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display:"flex", borderBottom:`1px solid ${B.navyBorder}`, marginBottom:14 }}>
+          {[["inspections","Inspections"],["fuel","Fuel History"]].map(([k,label])=>(
+            <button key={k} onClick={()=> k === "fuel" ? openFuelTab() : setHistoryTab(k)} style={{
+              padding:"8px 16px", border:"none", cursor:"pointer", fontSize:12, fontWeight:700,
+              background:"transparent", color:historyTab===k?B.white:B.muted,
+              borderBottom:`2px solid ${historyTab===k?B.blue:"transparent"}`,
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {/* ── Inspections tab ───────────────────────────────────────────────── */}
+        {historyTab === "inspections" && (
+          loadingHistory ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {Array.from({length:4}).map((_,i)=>(
+                <div key={i} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
+                    <div style={{ ...sh, height:13, width:"30%", borderRadius:20 }} />
+                    <div style={{ ...sh, height:11, width:"20%" }} />
+                  </div>
+                  <div style={{ ...sh, height:11, width:"60%" }} />
+                </div>
+              ))}
+            </div>
+          ) : historyItems.length === 0 ? (
+            <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"32px 0" }}>No inspection records found.</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {historyItems.map(insp => {
+                const isPre    = insp.inspection_type === "pre";
+                const hasFlags = insp.flagged_count > 0;
+                const dateStr  = insp.trip?.trip_date ?? insp.submitted_at?.slice(0,10) ?? "—";
+                const isExpanded = expandedId === insp.id;
+                const items    = loadedItems[insp.id];
+                const isLoading = loadingItemId === insp.id;
+                const sections = items
+                  ? Object.values(items.reduce((acc, item) => {
+                      const key = item.section_label;
+                      if (!acc[key]) acc[key] = { label:key, sort:item.section_sort, items:[] };
+                      acc[key].items.push(item);
+                      return acc;
+                    }, {})).sort((a,b)=>a.sort-b.sort)
+                  : [];
+
+                function toggleExpand() {
+                  if (isExpanded) { setExpandedId(null); return; }
+                  setExpandedId(insp.id);
+                  if (!loadedItems[insp.id]) {
+                    setLoadingItemId(insp.id);
+                    fetchInspectionDetail(insp.id)
+                      .then(res => setLoadedItems(prev=>({...prev,[insp.id]:res.data?.items??[]})))
+                      .catch(() => setLoadedItems(prev=>({...prev,[insp.id]:[]})))
+                      .finally(() => setLoadingItemId(null));
+                  }
+                }
+
+                return (
+                  <div key={insp.id} style={{ background:B.navyMid, borderRadius:12, overflow:"hidden",
+                    border:`1px solid ${hasFlags?B.redBorder??B.navyBorder:B.navyBorder}` }}>
+                    <div onClick={toggleExpand} style={{ padding:"12px 14px", cursor:"pointer" }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20,
+                            background:isPre?"#0c1a2e":"#1a1000",
+                            border:`1px solid ${isPre?"#1d4ed8":"#b45309"}`,
+                            color:isPre?"#93c5fd":"#fcd34d" }}>
+                            {isPre?"Pre-Trip":"Post-Trip"}
+                          </span>
+                          <span style={{ color:B.offWhite, fontSize:13, fontWeight:600 }}>{dateStr}</span>
+                        </div>
+                        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                          <span style={{ color:B.greenLight, fontSize:12 }}>✓ {insp.passed_count}</span>
+                          {hasFlags&&<span style={{ color:B.redLight, fontSize:12 }}>⚑ {insp.flagged_count}</span>}
+                          <span style={{ color:B.muted, fontSize:12 }}>{isExpanded?"▲":"▼"}</span>
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", gap:16, fontSize:11, color:B.muted }}>
+                        {insp.driver &&<span>Driver: <span style={{color:B.offWhite}}>{insp.driver}</span></span>}
+                        {insp.leadman&&<span>Leadman: <span style={{color:B.offWhite}}>{insp.leadman}</span></span>}
+                        {insp.trip_km&&<span>KM: <span style={{color:B.offWhite}}>{insp.trip_km}</span></span>}
+                        {insp.hours  &&<span>Hours: <span style={{color:B.offWhite}}>{insp.hours}</span></span>}
+                      </div>
+                      {insp.notes&&<p style={{color:B.muted,fontSize:11,marginTop:4,fontStyle:"italic"}}>{insp.notes}</p>}
+                    </div>
+                    {isExpanded && (
+                      <div style={{ borderTop:`1px solid ${B.navyBorder}` }}>
+                        {isLoading ? (
+                          <p style={{ color:B.muted, fontSize:12, textAlign:"center", padding:"16px 0" }}>Loading items…</p>
+                        ) : sections.length === 0 ? (
+                          <p style={{ color:B.muted, fontSize:12, textAlign:"center", padding:"16px 0" }}>No items recorded.</p>
+                        ) : (()=>{
+                          const currentTab = activeTab[insp.id] ?? sections[0]?.label;
+                          const tabSection = sections.find(s=>s.label===currentTab)??sections[0];
+                          return (
+                            <>
+                              <div style={{ display:"flex", overflowX:"auto", borderBottom:`1px solid ${B.navyBorder}` }}>
+                                {sections.map(sec=>{
+                                  const secHasFlags=sec.items.some(i=>i.status==="flag");
+                                  const isActive=currentTab===sec.label;
+                                  return (
+                                    <button key={sec.label}
+                                      onClick={e=>{e.stopPropagation();setActiveTab(prev=>({...prev,[insp.id]:sec.label}));}}
+                                      style={{ flexShrink:0, padding:"12px 14px 14px", border:"none", cursor:"pointer",
+                                        background:"transparent", fontSize:11, fontWeight:700, lineHeight:1.2,
+                                        color:isActive?(secHasFlags?B.redLight:B.blueLight):B.muted,
+                                        borderBottom:`2px solid ${isActive?(secHasFlags?B.redLight:B.blue):"transparent"}`,
+                                        whiteSpace:"nowrap" }}>
+                                      {sec.label}{secHasFlags&&<span style={{color:B.redLight,marginLeft:4}}>⚑</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div style={{ padding:"10px 14px" }}>
+                                {tabSection?.items.sort((a,b)=>a.item_sort-b.item_sort).map(item=>(
+                                  <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:8 }}>
+                                    <span style={{ fontSize:13, fontWeight:700, flexShrink:0, marginTop:1,
+                                      color:item.status==="flag"?B.redLight:B.greenLight }}>
+                                      {item.status==="flag"?"⚑":"✓"}
+                                    </span>
+                                    <div>
+                                      <span style={{ fontSize:12, color:item.status==="flag"?B.redLight:B.offWhite }}>{item.item_label}</span>
+                                      {item.issue_description&&<p style={{color:B.redLight,fontSize:11,margin:"2px 0 0",fontStyle:"italic"}}>{item.issue_description}</p>}
+                                      {item.resolved_at&&<p style={{color:B.greenLight,fontSize:10,margin:"2px 0 0"}}>✓ Resolved</p>}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* ── Fuel History tab ─────────────────────────────────────────────── */}
+        {historyTab === "fuel" && (
+          loadingFuel ? (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {Array.from({length:4}).map((_,i)=>(
+                <div key={i} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
+                    <div style={{ ...sh, height:13, width:"25%" }} />
+                    <div style={{ ...sh, height:11, width:"20%" }} />
+                  </div>
+                  <div style={{ display:"flex", gap:8 }}>
+                    <div style={{ ...sh, height:11, width:"30%" }} />
+                    <div style={{ ...sh, height:11, width:"30%" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : fuelHistory.length === 0 ? (
+            <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"32px 0" }}>No fuel purchases recorded for this vehicle.</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {fuelHistory.map(f=>(
+                <div key={f.id} style={{ background:B.navyMid, borderRadius:12, padding:14, border:`1px solid ${B.navyBorder}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
+                    <div>
+                      <span style={{ color:B.white, fontWeight:700, fontSize:14 }}>₱{Number(f.total_cost).toLocaleString()}</span>
+                      <span style={{ color:B.muted, fontSize:11, marginLeft:8, textTransform:"capitalize" }}>{f.fuel_type}</span>
+                    </div>
+                    <span style={{ color:B.muted, fontSize:11 }}>{f.date}</span>
+                  </div>
+                  <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>
+                    <span style={{ color:B.muted, fontSize:11 }}>🔢 {f.liters}L</span>
+                    <span style={{ color:B.muted, fontSize:11 }}>₱{f.price_per_liter}/L</span>
+                    {f.odometer&&<span style={{ color:B.muted, fontSize:11 }}>Odo: {f.odometer} km</span>}
+                    {f.station&&<span style={{ color:B.offWhite, fontSize:11 }}>{f.station}</span>}
+                  </div>
+                  {f.invoice_number&&<p style={{ color:B.muted, fontSize:11, marginTop:6 }}>Ref: {f.invoice_number}</p>}
+                  {f.remarks&&<p style={{ color:B.muted, fontSize:11, marginTop:4, fontStyle:"italic" }}>{f.remarks}</p>}
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {toast && <Toast msg={toast.msg} type={toast.type} />}
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight:"unset", background:B.navy, padding:16 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
@@ -337,7 +739,7 @@ export default function FleetRegistry() {
         </div>
         <button onClick={openAdd} style={{
           padding:"8px 16px", borderRadius:10, border:"none", background:B.blue,
-          color:B.white, fontWeight:700, fontSize:13, cursor:"pointer",
+          color:"#FFFFFF", fontWeight:700, fontSize:13, cursor:"pointer",
         }}>+ Add</button>
       </div>
 
@@ -381,7 +783,9 @@ export default function FleetRegistry() {
 
       {/* Vehicle list */}
       {loading ? (
-        <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>Loading fleet data…</p>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)}
+        </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
           {filtered.map(v=>(
@@ -425,7 +829,7 @@ export default function FleetRegistry() {
                     ))}
                   </div>
                   {v.remarks && <div style={{ color:B.muted, fontSize:12, marginBottom:10 }}>Remarks: {v.remarks}</div>}
-                  <div style={{ display:"flex", gap:8 }}>
+                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                     <button onClick={()=>openEdit(v)} style={{
                       flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.blue}`,
                       background:"transparent", color:B.blueLight, fontSize:12, fontWeight:700, cursor:"pointer",
@@ -434,6 +838,10 @@ export default function FleetRegistry() {
                       flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.navyBorder}`,
                       background:"transparent", color:B.muted, fontSize:12, fontWeight:700, cursor:"pointer",
                     }}>History</button>
+                    <button onClick={()=>setFuelVehicle(v)} style={{
+                      flex:1, padding:"8px 0", borderRadius:8, border:"1px solid #15803d",
+                      background:"transparent", color:"#4ade80", fontSize:12, fontWeight:700, cursor:"pointer",
+                    }}>⛽ Fuel</button>
                     {v.status==="active" ? (
                       <button onClick={()=>handleRetire(v)} style={{
                         flex:1, padding:"8px 0", borderRadius:8, border:`1px solid ${B.navyBorder}`,
@@ -499,164 +907,15 @@ export default function FleetRegistry() {
       )}
 
       {/* Inspection History Modal */}
-      {historyVehicle && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:100, overflowY:"auto", padding:"20px 16px" }}>
-          <div style={{ background:B.navyMid, borderRadius:16, padding:20, maxWidth:600, margin:"0 auto" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
-              <div>
-                <h3 style={{ color:B.white, fontSize:16, fontWeight:700, marginBottom:2 }}>
-                  {historyVehicle.plate} — Inspection History
-                </h3>
-                <p style={{ color:B.muted, fontSize:12 }}>
-                  {historyVehicle.make} {historyVehicle.model} · {historyVehicle.type}
-                </p>
-              </div>
-              <button onClick={()=>{ setHistoryVehicle(null); setHistoryItems([]); setExpandedId(null); setLoadedItems({}); }}
-                style={{ background:"none", border:"none", color:B.muted, fontSize:20, cursor:"pointer" }}>✕</button>
-            </div>
-
-            {loadingHistory ? (
-              <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>Loading…</p>
-            ) : historyItems.length === 0 ? (
-              <p style={{ color:B.muted, fontSize:13, textAlign:"center", padding:"24px 0" }}>
-                No inspection records found.
-              </p>
-            ) : (
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {historyItems.map(insp => {
-                  const isPre      = insp.inspection_type === "pre";
-                  const hasFlags   = insp.flagged_count > 0;
-                  const dateStr    = insp.trip?.trip_date ?? insp.submitted_at?.slice(0,10) ?? "—";
-                  const isExpanded = expandedId === insp.id;
-                  const items      = loadedItems[insp.id];
-                  const isLoading  = loadingItemId === insp.id;
-
-                  const sections = items
-                    ? Object.values(
-                        items.reduce((acc, item) => {
-                          const key = item.section_label;
-                          if (!acc[key]) acc[key] = { label: key, sort: item.section_sort, items: [] };
-                          acc[key].items.push(item);
-                          return acc;
-                        }, {})
-                      ).sort((a, b) => a.sort - b.sort)
-                    : [];
-
-                  function toggleExpand() {
-                    if (isExpanded) { setExpandedId(null); return; }
-                    setExpandedId(insp.id);
-                    if (!loadedItems[insp.id]) {
-                      setLoadingItemId(insp.id);
-                      fetchInspectionDetail(insp.id)
-                        .then(res => setLoadedItems(prev => ({ ...prev, [insp.id]: res.data?.items ?? [] })))
-                        .catch(() => setLoadedItems(prev => ({ ...prev, [insp.id]: [] })))
-                        .finally(() => setLoadingItemId(null));
-                    }
-                  }
-
-                  return (
-                    <div key={insp.id} style={{
-                      background:B.navyLight, borderRadius:12, overflow:"hidden",
-                      border:`1px solid ${hasFlags ? B.statusRedBorder : B.navyBorder}`,
-                    }}>
-                      <div onClick={toggleExpand} style={{ padding:"12px 14px", cursor:"pointer" }}>
-                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                            <span style={{
-                              fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:20,
-                              background: isPre ? "#0c1a2e" : "#1a1000",
-                              border: `1px solid ${isPre ? "#1d4ed8" : "#b45309"}`,
-                              color: isPre ? "#93c5fd" : "#fcd34d",
-                            }}>
-                              {isPre ? "Pre-Trip" : "Post-Trip"}
-                            </span>
-                            <span style={{ color:B.offWhite, fontSize:13, fontWeight:600 }}>{dateStr}</span>
-                          </div>
-                          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                            <span style={{ color:B.greenLight, fontSize:12 }}>✓ {insp.passed_count}</span>
-                            {hasFlags && <span style={{ color:B.redLight, fontSize:12 }}>⚑ {insp.flagged_count}</span>}
-                            <span style={{ color:B.muted, fontSize:12 }}>{isExpanded ? "▲" : "▼"}</span>
-                          </div>
-                        </div>
-                        <div style={{ display:"flex", gap:16, fontSize:11, color:B.muted }}>
-                          {insp.driver  && <span>Driver: <span style={{ color:B.offWhite }}>{insp.driver}</span></span>}
-                          {insp.leadman && <span>Leadman: <span style={{ color:B.offWhite }}>{insp.leadman}</span></span>}
-                          {insp.trip_km && <span>KM: <span style={{ color:B.offWhite }}>{insp.trip_km}</span></span>}
-                          {insp.hours   && <span>Hours: <span style={{ color:B.offWhite }}>{insp.hours}</span></span>}
-                        </div>
-                        {insp.notes && (
-                          <p style={{ color:B.muted, fontSize:11, marginTop:4, fontStyle:"italic" }}>{insp.notes}</p>
-                        )}
-                      </div>
-
-                      {isExpanded && (
-                        <div style={{ borderTop:`1px solid ${B.navyBorder}` }}>
-                          {isLoading ? (
-                            <p style={{ color:B.muted, fontSize:12, textAlign:"center", padding:"16px 0" }}>Loading items…</p>
-                          ) : sections.length === 0 ? (
-                            <p style={{ color:B.muted, fontSize:12, textAlign:"center", padding:"16px 0" }}>No items recorded.</p>
-                          ) : (() => {
-                            const currentTab = activeTab[insp.id] ?? sections[0]?.label;
-                            const tabSection = sections.find(s => s.label === currentTab) ?? sections[0];
-                            return (
-                              <>
-                                <div style={{ display:"flex", overflowX:"auto", borderBottom:`1px solid ${B.navyBorder}` }}>
-                                  {sections.map(sec => {
-                                    const secHasFlags = sec.items.some(i => i.status === "flag");
-                                    const isActive    = currentTab === sec.label;
-                                    return (
-                                      <button key={sec.label}
-                                        onClick={e => { e.stopPropagation(); setActiveTab(prev => ({ ...prev, [insp.id]: sec.label })); }}
-                                        style={{
-                                          flexShrink:0, padding:"12px 14px 14px", border:"none", cursor:"pointer",
-                                          background:"transparent", fontSize:11, fontWeight:700, lineHeight:1.2,
-                                          color: isActive ? (secHasFlags ? B.redLight : B.blueLight) : B.muted,
-                                          borderBottom: isActive ? `2px solid ${secHasFlags ? B.redLight : B.blue}` : "2px solid transparent",
-                                          whiteSpace:"nowrap",
-                                        }}>
-                                        {sec.label}
-                                        {secHasFlags && <span style={{ color:B.redLight, marginLeft:4 }}>⚑</span>}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                <div style={{ padding:"10px 14px" }}>
-                                  {tabSection?.items.sort((a,b) => a.item_sort - b.item_sort).map(item => (
-                                    <div key={item.id} style={{ display:"flex", alignItems:"flex-start", gap:8, marginBottom:8 }}>
-                                      <span style={{
-                                        fontSize:13, fontWeight:700, flexShrink:0, marginTop:1,
-                                        color: item.status === "flag" ? B.redLight : B.greenLight,
-                                      }}>
-                                        {item.status === "flag" ? "⚑" : "✓"}
-                                      </span>
-                                      <div>
-                                        <span style={{ fontSize:12, color: item.status === "flag" ? B.redLight : B.offWhite }}>
-                                          {item.item_label}
-                                        </span>
-                                        {item.issue_description && (
-                                          <p style={{ color:B.redLight, fontSize:11, margin:"2px 0 0", fontStyle:"italic" }}>
-                                            {item.issue_description}
-                                          </p>
-                                        )}
-                                        {item.resolved_at && (
-                                          <p style={{ color:B.greenLight, fontSize:10, margin:"2px 0 0" }}>✓ Resolved</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+      {fuelVehicle && (
+        <FuelModal
+          vehicle={fuelVehicle}
+          onClose={() => setFuelVehicle(null)}
+          onSaved={() => {
+            setFuelVehicle(null);
+            showToast(`Fuel purchase logged for ${fuelVehicle.plate}.`);
+          }}
+        />
       )}
 
       {toast && <Toast msg={toast.msg} type={toast.type} />}

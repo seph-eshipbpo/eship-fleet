@@ -186,7 +186,20 @@ export default function InspectionApp() {
         </h3>
 
         {loadingVehicles ? (
-          <p style={{ color: B.muted, fontSize: 13 }}>Loading vehicles…</p>
+          <div>
+            <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {Array.from({ length: 8 }).map((_, i) => {
+                const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+                return (
+                  <div key={i} style={{ padding:"12px 14px", borderRadius:12, border:`1px solid ${B.navyBorder}`, background:B.navyMid }}>
+                    <div style={{ ...sh, height:14, width:"60%", marginBottom:8 }} />
+                    <div style={{ ...sh, height:11, width:"75%" }} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {vehicles.filter(v => {
@@ -282,7 +295,22 @@ export default function InspectionApp() {
 
           {/* Checklist Sections */}
           {loadingSections ? (
-            <p style={{ color: B.muted, fontSize: 13 }}>Loading checklist…</p>
+            <div>
+              {Array.from({ length: 3 }).map((_, i) => {
+                const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+                return (
+                  <div key={i} style={{ background:B.navyMid, borderRadius:14, padding:16, marginBottom:12, border:`1px solid ${B.navyBorder}` }}>
+                    <div style={{ ...sh, height:14, width:"35%", marginBottom:14 }} />
+                    {Array.from({ length: 3 }).map((__, j) => (
+                      <div key={j} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10 }}>
+                        <div style={{ ...sh, height:20, width:20, borderRadius:4, flexShrink:0 }} />
+                        <div style={{ ...sh, height:11, width:"65%" }} />
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           ) : sections.map(section => {
             const sectionDone  = section.items.filter(i => checks[i.id] === "pass" || checks[i.id] === "flag").length;
             const sectionFlags = section.items.filter(i => checks[i.id] === "flag").length;

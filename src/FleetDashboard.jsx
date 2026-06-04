@@ -350,9 +350,27 @@ export default function FleetDashboard() {
 
       {/* Vehicle list */}
       {loading ? (
-        <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
-          Loading fleet data…
-        </p>
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+          {Array.from({ length: 5 }).map((_, i) => {
+            const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+            return (
+              <div key={i} style={{ background:B.navyMid, borderRadius:12, padding:"12px 14px", border:`1px solid ${B.navyBorder}` }}>
+                <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ ...sh, height:14, width:"35%", marginBottom:8 }} />
+                    <div style={{ ...sh, height:11, width:"55%", marginBottom:6 }} />
+                    <div style={{ ...sh, height:11, width:"40%" }} />
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
+                    <div style={{ ...sh, height:11, width:60 }} />
+                    <div style={{ ...sh, height:11, width:45 }} />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.map(v => (

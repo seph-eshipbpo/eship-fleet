@@ -304,9 +304,23 @@ export default function MaintenanceEngine() {
             </div>
 
             {loadingSchedule ? (
-              <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
-                Loading schedule…
-              </p>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+                {Array.from({ length: 4 }).map((_, i) => {
+                  const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+                  return (
+                    <div key={i} style={{ background:B.navyMid, borderRadius:10, padding:"10px 14px", border:`1px solid ${B.navyBorder}` }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ ...sh, height:13, width:"30%", marginBottom:7 }} />
+                          <div style={{ ...sh, height:10, width:"50%" }} />
+                        </div>
+                        <div style={{ ...sh, height:22, width:60, borderRadius:20 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : scheduleRows.map(row => {
               const { vehicle_id, plate, pm_rule_id, pm_rule_label,
                       trip_limit, km_limit, last_service_date,
@@ -480,7 +494,17 @@ export default function MaintenanceEngine() {
               COMPLETED SERVICE LOG
             </div>
             {loadingLogs ? (
-              <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "16px 0" }}>Loading…</p>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {Array.from({ length: 3 }).map((_, i) => {
+                  const sh = { background:`linear-gradient(90deg,${B.navyLight} 25%,${B.navyBorder} 50%,${B.navyLight} 75%)`, backgroundSize:"200% 100%", animation:"shimmer 1.4s infinite", borderRadius:6 };
+                  return (
+                    <div key={i} style={{ background:B.navyMid, borderRadius:10, padding:"10px 14px", border:`1px solid ${B.navyBorder}` }}>
+                      <div style={{ ...sh, height:12, width:"40%", marginBottom:7 }} />
+                      <div style={{ ...sh, height:10, width:"60%" }} />
+                    </div>
+                  );
+                })}
+              </div>
             ) : completedLogs.length === 0 ? (
               <p style={{ color: B.muted, fontSize: 13, textAlign: "center", padding: "16px 0" }}>
                 No completed service records yet.
