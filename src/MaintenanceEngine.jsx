@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useB } from "./contexts/ThemeContext";
-import { fetchPmSchedule, fetchServiceLogs, logService, approveServiceLog } from "./api/maintenance";
+import { fetchPmSchedule, fetchServiceLogs, logService, approveServiceLog, updateServiceLogHours } from "./api/maintenance";
 
 // ── Log Service modal ────────────────────────────────────────────────────────
 const EMPTY_PART = () => ({ name: "", qty: 1, unit_cost: 0 });
@@ -161,6 +161,10 @@ export default function MaintenanceEngine() {
   const [filterVehicle,   setFilterVehicle]   = useState("all");
   const [logTarget,        setLogTarget]        = useState(null);
   const [submitting,       setSubmitting]       = useState(false);
+  const [approvingId,      setApprovingId]      = useState(null);
+  const [approveHours,     setApproveHours]     = useState("");
+  const [editingHoursId,   setEditingHoursId]   = useState(null);
+  const [editHoursVal,     setEditHoursVal]     = useState("");
   const [logError,         setLogError]         = useState(null);
   const [expandedPending,  setExpandedPending]  = useState(null);
 
@@ -235,7 +239,11 @@ export default function MaintenanceEngine() {
 
   async function handleApprove(logId) {
     try {
-      await approveServiceLog(logId);
+      await approveServiceLog(logId, {
+        hours_down: approveHours ? parseFloat(approveHours) : 0,
+      });
+      setApprovingId(null);
+      setApproveHours("");
       loadLogs();      // refresh service log lists
       loadSchedule();  // approval resets PM counter — refresh schedule too
     } catch (err) {
@@ -466,18 +474,45 @@ export default function MaintenanceEngine() {
                             </div>
                           )}
 
-                          <button onClick={() => handleApprove(entry.id)} style={{
-                            width: "100%", padding: "8px 0", borderRadius: 8, border: "none",
-                            background: B.green, color: "#FFFFFF", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                          }}>✓ Approve & Record</button>
+                          {/* Inline approve form with hours_down */}
+                          {approvingId === entry.id ? (
+                            <div style={{ background: "#fefce8", borderRadius: 8, padding: 10, marginTop: 4 }}>
+                              <div style={{ color: "#78350f", fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+                                How many hours was the vehicle in maintenance?
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                <input type="number" min="0" step="0.5" value={approveHours}
+                                  onChange={e => setApproveHours(e.target.value)}
+                                  placeholder="e.g. 3.5"
+                                  style={{ flex: 1, borderRadius: 6, border: "1px solid #d97706",
+                                    padding: "7px 10px", fontSize: 13, outline: "none" }} />
+                                <span style={{ color: "#78350f", fontSize: 12 }}>hrs down</span>
+                              </div>
+                              <div style={{ display: "flex", gap: 8 }}>
+                                <button onClick={() => { setApprovingId(null); setApproveHours(""); }} style={{
+                                  flex: 1, padding: "7px 0", borderRadius: 8, border: "1px solid #d97706",
+                                  background: "transparent", color: "#78350f", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                }}>Cancel</button>
+                                <button onClick={() => handleApprove(entry.id)} style={{
+                                  flex: 2, padding: "7px 0", borderRadius: 8, border: "none",
+                                  background: B.blue, color: "#FFFFFF", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                }}>✓ Approve & Record</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setApprovingId(entry.id); setApproveHours(""); }} style={{
+                              width: "100%", padding: "8px 0", borderRadius: 8, border: "none",
+                              background: B.blue, color: "#FFFFFF", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                            }}>✓ Approve & Record</button>
+                          )}
                         </div>
                       )}
 
-                      {/* Approve button visible when collapsed too */}
-                      {!isOpen && (
+                      {/* Approve button visible when collapsed */}
+                      {!isOpen && approvingId !== entry.id && (
                         <div style={{ padding: "0 12px 12px" }}>
-                          <button onClick={() => handleApprove(entry.id)} style={{
-                            padding: "6px 14px", borderRadius: 8, border: "none", background: B.green,
+                          <button onClick={() => { setApprovingId(entry.id); setApproveHours(""); setExpandedPending(entry.id); }} style={{
+                            padding: "6px 14px", borderRadius: 8, border: "none", background: B.blue,
                             color: "#FFFFFF", fontSize: 11, fontWeight: 700, cursor: "pointer",
                           }}>✓ Approve & Record</button>
                         </div>
@@ -539,14 +574,67 @@ export default function MaintenanceEngine() {
                     ))}
                   </div>
                 )}
-                <div style={{ display: "flex", gap: 12 }}>
-                  <span style={{ color: B.greenLight, fontSize: 11 }}>
-                    Total: ₱{Number(entry.total_cost ?? entry.labor_cost ?? 0).toLocaleString()}
-                  </span>
-                  {entry.approved_by && (
-                    <span style={{ color: B.muted, fontSize: 11 }}>Approved by: {entry.approved_by}</span>
-                  )}
+                {/* Footer row: approved by + total on the right */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                  borderTop: `1px solid ${B.navyBorder}`, paddingTop: 8, marginTop: 6 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    {entry.approved_by && (
+                      <span style={{ color: B.muted, fontSize: 11 }}>Approved by: {entry.approved_by}</span>
+                    )}
+                  </div>
+
+                  {/* Total — larger, blue, right-aligned */}
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ color: B.blueLight, fontSize: 18, fontWeight: 800 }}>
+                      ₱{Number(entry.total_cost ?? entry.labor_cost ?? 0).toLocaleString()}
+                    </div>
+                    <div style={{ color: B.muted, fontSize: 10 }}>Total</div>
+                  </div>
                 </div>
+
+                {/* Down hours — full-width centered button */}
+                {editingHoursId === entry.id ? (
+                  <div style={{ marginTop: 10, padding: "10px 12px", background: B.navyLight,
+                    borderRadius: 8, border: `1px solid ${B.navyBorder}` }}>
+                    <div style={{ color: B.offWhite, fontSize: 12, fontWeight: 700,
+                      textAlign: "center", marginBottom: 8 }}>⏱ Enter Vehicle Down Hours</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 8 }}>
+                      <input type="number" min="0" step="0.5" value={editHoursVal}
+                        onChange={e => setEditHoursVal(e.target.value)}
+                        placeholder="e.g. 3.5"
+                        style={{ width: 90, borderRadius: 6, border: `1px solid ${B.navyBorder}`,
+                          background: B.navyMid, color: B.white, padding: "7px 10px",
+                          fontSize: 14, outline: "none", textAlign: "center" }} />
+                      <span style={{ color: B.muted, fontSize: 13 }}>hours</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => setEditingHoursId(null)} style={{
+                        flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${B.navyBorder}`,
+                        background: "transparent", color: B.muted, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      }}>Cancel</button>
+                      <button onClick={async () => {
+                        await updateServiceLogHours(entry.id, parseFloat(editHoursVal) || 0);
+                        setEditingHoursId(null);
+                        loadLogs();
+                      }} style={{
+                        flex: 2, padding: "8px 0", borderRadius: 8, border: "none",
+                        background: B.blue, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      }}>Save Down Hours</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditingHoursId(entry.id); setEditHoursVal(String(entry.hours_down > 0 ? entry.hours_down : "")); }}
+                    style={{ marginTop: 6, padding: "6px 16px", borderRadius: 6, cursor: "pointer",
+                      border: `1px solid ${entry.hours_down > 0 ? B.navyBorder : B.blue}`,
+                      background: entry.hours_down > 0 ? "transparent" : B.blue,
+                      color: entry.hours_down > 0 ? B.offWhite : "#fff",
+                      fontSize: 11, fontWeight: 700 }}>
+                    {entry.hours_down > 0
+                      ? `⏱ ${entry.hours_down} hrs down  ·  Edit`
+                      : "⏱ Log Down Hours"}
+                  </button>
+                )}
               </div>
             ))}
           </div>

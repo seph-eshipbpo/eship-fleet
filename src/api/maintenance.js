@@ -21,6 +21,10 @@ export function logService(payload) {
 }
 
 /** POST /api/pm-service-logs/{id}/approve — approve a pending log */
-export function approveServiceLog(id) {
-  return api.post(`/api/pm-service-logs/${id}/approve`);
+export function approveServiceLog(id, data = {}) {
+  return api.post(`/api/pm-service-logs/${id}/approve`, data);
+}
+
+export function updateServiceLogHours(id, hours_down) {
+  return api.put(`/api/pm-service-logs/${id}/hours`, { hours_down });
 }
