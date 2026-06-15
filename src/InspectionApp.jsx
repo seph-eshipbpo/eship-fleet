@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useB } from "./contexts/ThemeContext";
 import { list as listVehicles } from "./api/vehicles";
-import { fetchSections, submitInspection } from "./api/inspections";
+import { fetchSections, submitInspection, uploadInspectionMedia, deleteInspectionMedia } from "./api/inspections";
 
 // Map API vehicle shape to the shape used throughout this component
 function mapVehicle(v) {
@@ -75,6 +75,10 @@ export default function InspectionApp() {
   const [tripHours, setTripHours] = useState("");
   const [notes,     setNotes]     = useState("");
 
+  // Media attachments (before save)
+  const [mediaFiles,   setMediaFiles]   = useState([]);
+  const fileInputRef = useRef(null);
+
   // Submission
   const [submitting,   setSubmitting]   = useState(false);
   const [submitError,  setSubmitError]  = useState(null);
@@ -103,6 +107,7 @@ export default function InspectionApp() {
     setChecks({});
     setFlagNotes({});
     setLeadman(""); setDriver(""); setTripKm(""); setTripHours(""); setNotes("");
+    setMediaFiles([]);
     setSubmitError(null);
     setScreen("form");
   }
@@ -123,7 +128,7 @@ export default function InspectionApp() {
     setSubmitError(null);
 
     try {
-      await submitInspection({
+      const result = await submitInspection({
         vehicle_id:      vehicle.id,
         inspection_type: type,
         driver:          driver    || null,
@@ -133,10 +138,16 @@ export default function InspectionApp() {
         notes:           notes     || null,
         items,
       });
+
+      if (mediaFiles.length > 0) {
+        await uploadInspectionMedia(result.data?.id, mediaFiles);
+      }
+
       // Reset and return home
       setChecks({});
       setFlagNotes({});
       setLeadman(""); setDriver(""); setTripKm(""); setTripHours(""); setNotes("");
+      setMediaFiles([]);
       setScreen("home");
     } catch (err) {
       setSubmitError(err.message || "Failed to save inspection. Please try again.");
@@ -293,6 +304,78 @@ export default function InspectionApp() {
             </div>
           </div>
 
+          {/* Media Attachments */}
+          <div style={{ background: B.navyMid, borderRadius: 14, padding: 16, marginBottom: 16, border: `1px solid ${B.navyBorder}` }}>
+            <div style={{ color: B.muted, fontSize: 11, fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>
+              ATTACH MEDIA
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+              style={{ display: "none" }}
+              onChange={e => {
+                const added = Array.from(e.target.files || []);
+                setMediaFiles(prev => {
+                  const existing = new Set(prev.map(f => f.name + f.size));
+                  return [...prev, ...added.filter(f => !existing.has(f.name + f.size))];
+                });
+                e.target.value = "";
+              }}
+            />
+            {mediaFiles.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                {mediaFiles.map((file, i) => {
+                  const isImage = file.type.startsWith("image/");
+                  const preview = isImage ? URL.createObjectURL(file) : null;
+                  return (
+                    <div key={i} style={{
+                      position: "relative", width: 72, height: 72, borderRadius: 8,
+                      border: `1px solid ${B.navyBorder}`, overflow: "hidden",
+                      background: B.navyLight, display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>
+                      {isImage ? (
+                        <img src={preview} alt={file.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <div style={{ textAlign: "center", padding: 6 }}>
+                          <div style={{ fontSize: 22 }}>📄</div>
+                          <div style={{ color: B.muted, fontSize: 9, marginTop: 2, wordBreak: "break-all", lineHeight: 1.2 }}>
+                            {file.name.length > 14 ? file.name.slice(0, 11) + "…" : file.name}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setMediaFiles(prev => prev.filter((_, j) => j !== i))}
+                        style={{
+                          position: "absolute", top: 2, right: 2, width: 18, height: 18,
+                          borderRadius: "50%", background: "rgba(0,0,0,0.6)", border: "none",
+                          color: "#fff", fontSize: 10, cursor: "pointer", display: "flex",
+                          alignItems: "center", justifyContent: "center", lineHeight: 1,
+                        }}
+                      >×</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                width: "100%", padding: "10px 0", borderRadius: 10,
+                border: `1px dashed ${B.navyBorder}`, background: "transparent",
+                color: B.muted, fontSize: 13, cursor: "pointer",
+              }}
+            >
+              + Add Images or PDF
+            </button>
+            {mediaFiles.length > 0 && (
+              <div style={{ color: B.muted, fontSize: 11, marginTop: 6, textAlign: "center" }}>
+                {mediaFiles.length} file{mediaFiles.length > 1 ? "s" : ""} selected
+              </div>
+            )}
+          </div>
+
           {/* Checklist Sections */}
           {loadingSections ? (
             <div>
@@ -445,7 +528,7 @@ export default function InspectionApp() {
         </div>
 
         <div style={{ padding: 16, borderTop: `1px solid ${B.navyBorder}`, background: B.navyMid, display: "flex", gap: 10 }}>
-          <button onClick={() => setScreen("home")} disabled={submitting} style={{
+          <button onClick={() => { setMediaFiles([]); setScreen("home"); }} disabled={submitting} style={{
             flex: 1, padding: "13px 0", borderRadius: 12, border: `1px solid ${B.navyBorder}`,
             background: "transparent", color: B.white, fontWeight: 700, fontSize: 14,
             cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.5 : 1,

@@ -45,3 +45,19 @@ export function submitInspection(payload) {
 export function fetchInspectionDetail(id) {
   return api.get(`/api/inspections/${id}`);
 }
+
+/**
+ * Upload one or more image/PDF files to an inspection.
+ * @param {number} id - inspection id
+ * @param {File[]} files
+ */
+export function uploadInspectionMedia(id, files) {
+  const form = new FormData();
+  files.forEach(f => form.append("media[]", f));
+  return api.upload(`/api/inspections/${id}/media`, form);
+}
+
+/** Delete a single media item from an inspection. */
+export function deleteInspectionMedia(id, mediaId) {
+  return api.delete(`/api/inspections/${id}/media/${mediaId}`);
+}

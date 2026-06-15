@@ -38,9 +38,42 @@ async function request(method, path, body) {
   return data;
 }
 
+async function upload(path, formData) {
+  const headers = {
+    "Accept":    "application/json",
+    "X-App-Key": APP_KEY,
+  };
+
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    if (res.status === 401 && getToken()) {
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
+    const message = data?.message || "Something went wrong.";
+    const errors  = data?.errors  || null;
+    const err     = new Error(message);
+    err.status    = res.status;
+    err.errors    = errors;
+    throw err;
+  }
+
+  return data;
+}
+
 export const api = {
-  get:    (path)        => request("GET",    path),
-  post:   (path, body)  => request("POST",   path, body),
-  put:    (path, body)  => request("PUT",    path, body),
-  delete: (path)        => request("DELETE", path),
+  get:    (path)             => request("GET",    path),
+  post:   (path, body)       => request("POST",   path, body),
+  put:    (path, body)       => request("PUT",    path, body),
+  delete: (path)             => request("DELETE", path),
+  upload: (path, formData)   => upload(path, formData),
 };
