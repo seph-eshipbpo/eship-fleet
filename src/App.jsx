@@ -186,43 +186,9 @@ function ProfileMenu({ colors }) {
   );
 }
 
-function useApiStatus() {
-  const [status, setStatus] = useState("checking"); // "live" | "offline" | "checking"
-
-  useEffect(() => {
-    const BASE_URL = import.meta.env.VITE_API_URL;
-
-    async function check() {
-      if (!navigator.onLine) { setStatus("offline"); return; }
-      try {
-        const res = await fetch(`${BASE_URL}/api/health`, {
-          method: "GET", cache: "no-store",
-          signal: AbortSignal.timeout(4000),
-        });
-        setStatus(res.ok ? "live" : "offline");
-      } catch {
-        setStatus("offline");
-      }
-    }
-
-    check();
-    const id = setInterval(check, 30_000);
-    window.addEventListener("online",  () => check());
-    window.addEventListener("offline", () => setStatus("offline"));
-    return () => {
-      clearInterval(id);
-      window.removeEventListener("online",  check);
-      window.removeEventListener("offline", () => setStatus("offline"));
-    };
-  }, []);
-
-  return status;
-}
-
 function AuthGate() {
   const { isAuthenticated } = useAuth();
   const { colors } = useTheme();
-  const apiStatus  = useApiStatus();
   const [screen,       setScreen]       = useState(() => getResetParams() ? "reset" : "login");
   const [activeModule, setActiveModule] = useState("dashboard");
   const resetParams = getResetParams();
@@ -271,15 +237,6 @@ function AuthGate() {
           <div style={{ color: colors.primary, fontSize:18, fontWeight:900, letterSpacing:-0.5 }}>eShip</div>
           <div style={{ color: colors.muted, fontSize:11, marginTop:1 }}>Fleet Management</div>
           <div style={{ flex:1 }} />
-          <div style={{
-            fontSize:10, fontWeight:700,
-            color:      apiStatus === "live" ? "#4ade80" : apiStatus === "offline" ? "#fca5a5" : "#fcd34d",
-            background: apiStatus === "live" ? "#052e16" : apiStatus === "offline" ? "#3a0e0a" : "#1a1000",
-            border:    `1px solid ${apiStatus === "live" ? "#14532d" : apiStatus === "offline" ? "#7f1d1d" : "#b45309"}`,
-            padding:"2px 8px", borderRadius:20,
-          }}>
-            {apiStatus === "live" ? "LIVE" : apiStatus === "offline" ? "OFFLINE" : "…"}
-          </div>
           <ThemeToggle />
           <ProfileMenu colors={colors} />
         </div>
